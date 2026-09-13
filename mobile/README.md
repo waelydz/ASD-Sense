@@ -1,10 +1,4 @@
-# ASD-Sense — Flutter Prototype
-
-An interactive Flutter build of the ASD-Sense Figma prototypes: Sign In, Sign
-Up, Dashboard, New Screening, Medical Records, Appointments, and Profile &
-Settings.
-
-## What's interactive
+# Flutter Prototype
 
 - **Sign In / Sign Up** — form validation, password show/hide, "remember me",
   loading states, navigates into the app.
@@ -21,10 +15,9 @@ Settings.
   preferences, log out back to Sign In.
 
 All data lives in a single in-memory store (`lib/data/app_data.dart`) — there
-is no backend or persistence yet, so state resets on app restart. That's the
-natural place to wire up a real API later.
+is no backend yet.
 
-## Run it
+## How to Run it
 
 1. Install the [Flutter SDK](https://docs.flutter.dev/get-started/install) if
    you haven't already, and make sure `flutter doctor` is happy.
@@ -37,11 +30,3 @@ natural place to wire up a real API later.
    ```
    Pick any connected device, simulator/emulator, or run `flutter run -d chrome`
    to try it in a browser.
-
-- Camera & file picker are simulated (no `image_picker` dependency yet) to
-  keep the prototype dependency-free. Wire up `image_picker` +
-  `http`/`dio` to call a real screening model.
-- Add persistence (e.g. `shared_preferences`, or a backend + `http`) so data
-  survives app restarts.
-- Swap the in-memory `AppData` singleton for a state-management package
-  (Provider, Riverpod, Bloc) as the app grows.
