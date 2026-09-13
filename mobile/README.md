@@ -38,28 +38,6 @@ natural place to wire up a real API later.
    Pick any connected device, simulator/emulator, or run `flutter run -d chrome`
    to try it in a browser.
 
-## Project structure
-
-```
-lib/
-  main.dart                     # App entry point
-  theme/app_theme.dart          # Colors, gradients, ThemeData
-  models/models.dart            # MedicalRecord, Appointment
-  data/app_data.dart            # In-memory shared state (ChangeNotifier)
-  widgets/common_widgets.dart   # Reusable buttons, text fields, cards
-  screens/
-    sign_in_screen.dart
-    sign_up_screen.dart
-    main_shell.dart             # Bottom-nav host for the 4 main tabs
-    dashboard_screen.dart
-    new_screening_screen.dart
-    medical_records_screen.dart
-    appointments_screen.dart
-    profile_screen.dart
-```
-
-## Notes / next steps
-
 - Camera & file picker are simulated (no `image_picker` dependency yet) to
   keep the prototype dependency-free. Wire up `image_picker` +
   `http`/`dio` to call a real screening model.
