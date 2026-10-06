@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'screens/sign_in_screen.dart';
+import 'screens/login_screen.dart';
 import 'theme/app_theme.dart';
 
 void main() {
@@ -15,7 +15,7 @@ class AsdSenseApp extends StatelessWidget {
       title: 'ASD-Sense',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light,
-      home: const SignInScreen(),
+      home: const LoginScreen(),
     );
   }
 }

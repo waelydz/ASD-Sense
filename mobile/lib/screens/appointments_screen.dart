@@ -4,183 +4,35 @@ import '../models/models.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common_widgets.dart';
 
-class AppointmentsScreen extends StatelessWidget {
-  const AppointmentsScreen({super.key});
+class AppointmentsScreen extends StatefulWidget {
+  final void Function(int tabIndex) onNavigateTab;
+  const AppointmentsScreen({super.key, required this.onNavigateTab});
 
-  void _openNewAppointmentSheet(BuildContext context) {
-    final nameController = TextEditingController();
-    final roleController = TextEditingController();
-    final locationController = TextEditingController();
-    DateTime pickedDate = DateTime.now().add(const Duration(days: 7));
+  @override
+  State<AppointmentsScreen> createState() => _AppointmentsScreenState();
+}
 
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (ctx, setSheetState) {
-            return Padding(
-              padding: EdgeInsets.only(
-                bottom: MediaQuery.of(ctx).viewInsets.bottom,
-              ),
-              child: Container(
-                padding: const EdgeInsets.all(20),
-                decoration: const BoxDecoration(
-                  color: AppColors.surface,
-                  borderRadius:
-                      BorderRadius.vertical(top: Radius.circular(24)),
-                ),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Center(
-                      child: Container(
-                        width: 40,
-                        height: 4,
-                        margin: const EdgeInsets.only(bottom: 16),
-                        decoration: BoxDecoration(
-                          color: AppColors.border,
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                      ),
-                    ),
-                    const Text(
-                      'New Appointment',
-                      style:
-                          TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-                    ),
-                    const SizedBox(height: 16),
-                    LabelledTextField(
-                      label: "Doctor's Name",
-                      hint: 'e.g. Dr. Amina Yousef',
-                      controller: nameController,
-                    ),
-                    const SizedBox(height: 14),
-                    LabelledTextField(
-                      label: 'Role',
-                      hint: 'e.g. Pediatrician',
-                      controller: roleController,
-                    ),
-                    const SizedBox(height: 14),
-                    LabelledTextField(
-                      label: 'Location',
-                      hint: 'e.g. Al Qassimi Hospital',
-                      controller: locationController,
-                    ),
-                    const SizedBox(height: 14),
-                    InkWell(
-                      onTap: () async {
-                        final result = await showDatePicker(
-                          context: ctx,
-                          initialDate: pickedDate,
-                          firstDate: DateTime.now(),
-                          lastDate:
-                              DateTime.now().add(const Duration(days: 365)),
-                        );
-                        if (result != null) {
-                          setSheetState(() => pickedDate = result);
-                        }
-                      },
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 16, vertical: 14),
-                        decoration: BoxDecoration(
-                          border: Border.all(color: AppColors.border),
-                          borderRadius: BorderRadius.circular(14),
-                        ),
-                        child: Row(
-                          children: [
-                            const Icon(Icons.calendar_today,
-                                size: 18, color: AppColors.textGrey),
-                            const SizedBox(width: 10),
-                            Text(_formatDate(pickedDate)),
-                          ],
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-                    PrimaryButton(
-                      label: 'Add Appointment',
-                      onPressed: () {
-                        if (nameController.text.trim().isEmpty) return;
-                        AppData.instance.addAppointment(
-                          Appointment(
-                            doctorName: nameController.text.trim(),
-                            role: roleController.text.trim().isEmpty
-                                ? 'Clinician'
-                                : roleController.text.trim(),
-                            date: _formatDate(pickedDate),
-                            time: '10:00 AM',
-                            location: locationController.text.trim().isEmpty
-                                ? 'TBD'
-                                : locationController.text.trim(),
-                            isVirtual: locationController.text
-                                .toLowerCase()
-                                .contains('virtual'),
-                          ),
-                        );
-                        Navigator.of(ctx).pop();
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-                ),
-              ),
-            );
-          },
-        );
-      },
-    );
+class _AppointmentsScreenState extends State<AppointmentsScreen> {
+  final _searchController = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
-  static String _formatDate(DateTime d) {
-    const months = [
-      'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December'
-    ];
-    return '${months[d.month - 1]} ${d.day}, ${d.year}';
-  }
-
-  void _confirmCancel(BuildContext context, Appointment appt) {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Cancel appointment?'),
-        content: Text(
-          'Are you sure you want to cancel your appointment with '
-          '${appt.doctorName}?',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Keep it'),
-          ),
-          TextButton(
-            onPressed: () {
-              AppData.instance.cancelAppointment(appt);
-              Navigator.of(ctx).pop();
-            },
-            child: const Text('Cancel appointment',
-                style: TextStyle(color: Colors.red)),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Future<void> _reschedule(BuildContext context, Appointment appt) async {
-    final result = await showDatePicker(
-      context: context,
-      initialDate: DateTime.now().add(const Duration(days: 7)),
-      firstDate: DateTime.now(),
-      lastDate: DateTime.now().add(const Duration(days: 365)),
-    );
-    if (result != null) {
-      AppData.instance.rescheduleAppointment(appt, _formatDate(result));
+  void _book(CareCenter center) {
+    if (AppData.instance.activeChild == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Add a child profile first, from Home.')),
+      );
+      return;
     }
+    AppData.instance.setAppointment(Appointment(center: center));
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Appointment requested at ${center.name}.')),
+    );
   }
 
   @override
@@ -188,184 +40,175 @@ class AppointmentsScreen extends StatelessWidget {
     final data = AppData.instance;
 
     return Scaffold(
-      backgroundColor: AppColors.background,
-      appBar: AppBar(
-        title: const Text('Appointments'),
-        titleSpacing: 16,
-        toolbarHeight: 64,
-      ),
+      backgroundColor: AppColors.paper,
       body: AnimatedBuilder(
         animation: data,
         builder: (context, _) {
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
-            children: [
-              const Text(
-                'Manage your appointments',
-                style: TextStyle(color: AppColors.textGrey),
-              ),
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          final q = _query.trim().toLowerCase();
+          final results = q.isEmpty
+              ? data.centers
+              : data.centers.where((c) {
+                  return c.name.toLowerCase().contains(q) ||
+                      c.address.toLowerCase().contains(q) ||
+                      c.city.toLowerCase().contains(q);
+                }).toList();
+
+          final appt = data.activeAppointment;
+
+          return SafeArea(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'Upcoming Appointments',
-                    style: TextStyle(
-                      fontSize: 17,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textDark,
-                    ),
+                  MainHeader(
+                    title: 'Appointments',
+                    onProfileTap: () => widget.onNavigateTab(4),
                   ),
-                  ElevatedButton.icon(
-                    onPressed: () => _openNewAppointmentSheet(context),
-                    icon: const Icon(Icons.add, size: 18),
-                    label: const Text('New'),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.primary,
-                      foregroundColor: Colors.white,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
+                  const SizedBox(height: 18),
+                  if (appt != null) ...[
+                    SectionCard(
+                      bg: AppColors.successBg,
+                      child: Row(
+                        children: [
+                          const Icon(Icons.check_circle, color: AppColors.primaryDark),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('Appointment requested',
+                                    style: TextStyle(
+                                        fontWeight: FontWeight.w700,
+                                        color: AppColors.primaryDark)),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '${appt.center.name} · ${appt.center.address}',
+                                  style: const TextStyle(
+                                      color: AppColors.primaryDark, fontSize: 12.5),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 18),
+                  ],
+                  Text('Find a center', style: AppText.heading(18)),
+                  const SizedBox(height: 4),
+                  const Text(
+                    'Search for a screening or care center near you.',
+                    style: TextStyle(color: AppColors.textGrey, fontSize: 13.5),
+                  ),
+                  const SizedBox(height: 14),
+                  TextField(
+                    controller: _searchController,
+                    onChanged: (v) => setState(() => _query = v),
+                    decoration: InputDecoration(
+                      hintText: 'Search by name, area, or city',
+                      hintStyle: const TextStyle(color: AppColors.textFaint),
+                      prefixIcon: const Icon(Icons.search, color: AppColors.textGrey),
+                      filled: true,
+                      fillColor: AppColors.surface,
+                      contentPadding: const EdgeInsets.symmetric(vertical: 13),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(13),
+                        borderSide: const BorderSide(color: AppColors.inputBorder),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(13),
+                        borderSide: const BorderSide(color: AppColors.primary, width: 1.5),
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(13),
+                        borderSide: const BorderSide(color: AppColors.inputBorder),
                       ),
                     ),
                   ),
+                  const SizedBox(height: 16),
+                  if (data.centers.isEmpty)
+                    SectionCard(
+                      child: Column(
+                        children: [
+                          const SizedBox(height: 6),
+                          const Icon(Icons.location_city_outlined,
+                              size: 36, color: AppColors.textFaint),
+                          const SizedBox(height: 12),
+                          Text('No centers added yet', style: AppText.heading(16)),
+                          const SizedBox(height: 6),
+                          const Text(
+                            'Partner centers will appear here once added.',
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: AppColors.textGrey, fontSize: 13),
+                          ),
+                          const SizedBox(height: 6),
+                        ],
+                      ),
+                    )
+                  else if (results.isEmpty)
+                    SectionCard(
+                      child: Column(
+                        children: [
+                          const SizedBox(height: 6),
+                          const Icon(Icons.search_off, size: 36, color: AppColors.textFaint),
+                          const SizedBox(height: 12),
+                          Text('No matches found', style: AppText.heading(16)),
+                          const SizedBox(height: 6),
+                          const Text(
+                            'Try a different name, area, or city.',
+                            style: TextStyle(color: AppColors.textGrey, fontSize: 13),
+                          ),
+                          const SizedBox(height: 6),
+                        ],
+                      ),
+                    )
+                  else
+                    for (final center in results) ...[
+                      SectionCard(
+                        child: Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: AppColors.sageBg,
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: const Icon(Icons.local_hospital_outlined,
+                                  color: AppColors.sage, size: 19),
+                            ),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(center.name,
+                                      style: const TextStyle(
+                                          fontWeight: FontWeight.w700, fontSize: 15)),
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    '${center.address} · ${center.city}',
+                                    style: const TextStyle(
+                                        color: AppColors.textGrey, fontSize: 12.5),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            TextButton(
+                              onPressed: () => _book(center),
+                              style: TextButton.styleFrom(foregroundColor: AppColors.primaryDark),
+                              child: const Text('Book'),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                    ],
                 ],
               ),
-              const SizedBox(height: 14),
-              if (data.appointments.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.only(top: 40),
-                  child: Center(
-                    child: Text(
-                      'No upcoming appointments.',
-                      style: TextStyle(color: AppColors.textGrey),
-                    ),
-                  ),
-                ),
-              for (final appt in List<Appointment>.from(data.appointments)) ...[
-                _AppointmentCard(
-                  appt: appt,
-                  onCancel: () => _confirmCancel(context, appt),
-                  onReschedule: () => _reschedule(context, appt),
-                  onJoin: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                          content: Text('Joining virtual meeting... (demo)')),
-                    );
-                  },
-                ),
-                const SizedBox(height: 14),
-              ],
-            ],
+            ),
           );
         },
-      ),
-    );
-  }
-}
-
-class _AppointmentCard extends StatelessWidget {
-  final Appointment appt;
-  final VoidCallback onCancel;
-  final VoidCallback onReschedule;
-  final VoidCallback onJoin;
-
-  const _AppointmentCard({
-    required this.appt,
-    required this.onCancel,
-    required this.onReschedule,
-    required this.onJoin,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return SectionCard(
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: AppColors.infoBlueBg,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Icon(
-                  appt.isVirtual ? Icons.videocam : Icons.location_on,
-                  color: AppColors.primary,
-                  size: 20,
-                ),
-              ),
-              const SizedBox(width: 14),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    appt.doctorName,
-                    style: const TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.textDark,
-                    ),
-                  ),
-                  Text(appt.role,
-                      style: const TextStyle(color: AppColors.textGrey)),
-                ],
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          Text(appt.date, style: const TextStyle(color: AppColors.textDark)),
-          const SizedBox(height: 2),
-          Text(appt.time, style: const TextStyle(color: AppColors.textDark)),
-          const SizedBox(height: 2),
-          Text(appt.location,
-              style: const TextStyle(color: AppColors.textDark)),
-          const SizedBox(height: 12),
-          StatusBadge(text: appt.status),
-          const SizedBox(height: 14),
-          if (appt.isVirtual) ...[
-            PrimaryButton(label: 'Join Meeting', onPressed: onJoin),
-            const SizedBox(height: 10),
-          ],
-          Row(
-            children: [
-              Expanded(
-                child: _PillButton(label: 'Reschedule', onTap: onReschedule),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: _PillButton(label: 'Cancel', onTap: onCancel),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _PillButton extends StatelessWidget {
-  final String label;
-  final VoidCallback onTap;
-  const _PillButton({required this.label, required this.onTap});
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 44,
-      child: ElevatedButton(
-        onPressed: onTap,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.background,
-          foregroundColor: AppColors.textDark,
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-        ),
-        child: Text(label, style: const TextStyle(fontWeight: FontWeight.w600)),
       ),
     );
   }

@@ -1,108 +1,31 @@
 import 'package:flutter/material.dart';
 import '../models/models.dart';
 
-/// Very small in-memory "backend" for the prototype.
-///
-/// This is a single ChangeNotifier singleton that every screen listens to
-/// (via AnimatedBuilder / ValueListenableBuilder wrappers). It's intentionally
-/// simple - in a production app this would be replaced by a real state
-/// management solution (Riverpod/Bloc/Provider) talking to an API.
 class AppData extends ChangeNotifier {
   AppData._internal();
   static final AppData instance = AppData._internal();
 
-  // ---- Profile -------------------------------------------------------
-  String guardianName = 'Abdullah Ahmad';
-  String email = 'u23100949@sharjah.ac.ae';
-  String phone = '+971 500000000';
-  String childName = 'Sarah Ahmad';
-  String childAge = '3 years, 4 months';
+  String guardianName = '';
+  String email = '';
+  String phone = '';
+
   bool pushNotifications = true;
   bool emailNotifications = false;
 
-  // ---- Medical records -------------------------------------------------
-  final List<MedicalRecord> records = [
-    MedicalRecord(
-      title: 'Autism Screening',
-      subtitle: 'Low Risk - 94.2% confidence',
-      date: 'April 19, 2026',
-      kind: RecordKind.screening,
-    ),
-    MedicalRecord(
-      title: 'Autism Screening',
-      subtitle: 'Low Risk - 92.8% confidence',
-      date: 'April 15, 2026',
-      kind: RecordKind.screening,
-    ),
-    MedicalRecord(
-      title: 'MMR Vaccination',
-      subtitle: 'Administered - No reactions',
-      date: 'April 5, 2026',
-      kind: RecordKind.vaccination,
-    ),
-    MedicalRecord(
-      title: 'Annual Checkup',
-      subtitle: 'Normal development - Healthy',
-      date: 'March 20, 2026',
-      kind: RecordKind.checkup,
-    ),
-    MedicalRecord(
-      title: 'Vitamin D Supplement',
-      subtitle: 'Prescribed by Dr. Wael',
-      date: 'March 1, 2026',
-      kind: RecordKind.prescription,
-    ),
-  ];
-
-  void addRecord(MedicalRecord record) {
-    records.insert(0, record);
-    notifyListeners();
-  }
-
-  // ---- Appointments ------------------------------------------------------
-  final List<Appointment> appointments = [
-    Appointment(
-      doctorName: 'Dr. Sewar Feras',
-      role: 'Clinician',
-      date: 'April 3rd, 2026',
-      time: '10:00 AM',
-      location: 'University of Sharjah Hospital',
-    ),
-    Appointment(
-      doctorName: 'Dr. Syed Yahya',
-      role: 'Pediatrician',
-      date: 'April 15th, 2026',
-      time: '5:00 PM',
-      location: 'Virtual Meeting',
-      isVirtual: true,
-    ),
-  ];
-
-  int get pendingAssessments => 3;
-  String get nextAppointmentDate =>
-      appointments.isNotEmpty ? appointments.first.date : '-';
-
-  void addAppointment(Appointment appt) {
-    appointments.add(appt);
-    notifyListeners();
-  }
-
-  void cancelAppointment(Appointment appt) {
-    appointments.remove(appt);
-    notifyListeners();
-  }
-
-  void rescheduleAppointment(Appointment appt, String newDate) {
-    appt.date = newDate;
-    notifyListeners();
-  }
-
-  void updateProfileField({
-    String? email,
-    String? phone,
+  void completeSignUp({
+    required String name,
+    required String email,
+    required String phone,
   }) {
-    if (email != null) this.email = email;
-    if (phone != null) this.phone = phone;
+    guardianName = name;
+    this.email = email;
+    this.phone = phone;
+    notifyListeners();
+  }
+
+  void updateGuardian({required String name, required String phone}) {
+    guardianName = name;
+    this.phone = phone;
     notifyListeners();
   }
 
@@ -111,4 +34,64 @@ class AppData extends ChangeNotifier {
     if (emailPref != null) emailNotifications = emailPref;
     notifyListeners();
   }
+
+  final List<Child> children = [];
+  String? activeChildId;
+
+  Child? get activeChild {
+    if (activeChildId == null) return null;
+    try {
+      return children.firstWhere((c) => c.id == activeChildId);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  void addChild(String name, String age) {
+    final child = Child(
+      id: DateTime.now().microsecondsSinceEpoch.toString(),
+      name: name,
+      age: age,
+    );
+    children.add(child);
+    recordsByChild[child.id] = [];
+    activeChildId = child.id;
+    notifyListeners();
+  }
+
+  void switchChild(String id) {
+    activeChildId = id;
+    notifyListeners();
+  }
+
+  final Map<String, List<MedicalRecord>> recordsByChild = {};
+
+  List<MedicalRecord> get activeRecords =>
+      activeChildId == null ? [] : (recordsByChild[activeChildId] ?? []);
+
+  void addRecord(MedicalRecord record) {
+    if (activeChildId == null) return;
+    recordsByChild.putIfAbsent(activeChildId!, () => []);
+    recordsByChild[activeChildId!]!.insert(0, record);
+    notifyListeners();
+  }
+
+  void removeRecord(MedicalRecord record) {
+    if (activeChildId == null) return;
+    recordsByChild[activeChildId!]?.remove(record);
+    notifyListeners();
+  }
+
+  final Map<String, Appointment> appointmentByChild = {};
+
+  Appointment? get activeAppointment =>
+      activeChildId == null ? null : appointmentByChild[activeChildId];
+
+  void setAppointment(Appointment appt) {
+    if (activeChildId == null) return;
+    appointmentByChild[activeChildId!] = appt;
+    notifyListeners();
+  }
+
+  final List<CareCenter> centers = [];
 }

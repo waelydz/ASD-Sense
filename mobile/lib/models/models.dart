@@ -1,35 +1,37 @@
-class MedicalRecord {
-  final String title;
-  final String subtitle;
-  final String date;
-  final RecordKind kind;
+class Child {
+  final String id;
+  String name;
+  String age;
 
-  MedicalRecord({
-    required this.title,
-    required this.subtitle,
-    required this.date,
-    this.kind = RecordKind.other,
-  });
+  Child({required this.id, required this.name, required this.age});
 }
 
-enum RecordKind { screening, vaccination, checkup, prescription, other }
+enum RecordType { document, imaging }
+
+class MedicalRecord {
+  final String fileName;
+  final RecordType type;
+  final String date;
+
+  MedicalRecord({
+    required this.fileName,
+    required this.type,
+    required this.date,
+  });
+
+  String get typeLabel => type == RecordType.document ? 'Document' : 'Imaging report';
+}
+
+class CareCenter {
+  final String name;
+  final String address;
+  final String city;
+
+  CareCenter({required this.name, required this.address, required this.city});
+}
 
 class Appointment {
-  final String doctorName;
-  final String role;
-  String date;
-  final String time;
-  final String location;
-  final bool isVirtual;
-  String status;
+  final CareCenter center;
 
-  Appointment({
-    required this.doctorName,
-    required this.role,
-    required this.date,
-    required this.time,
-    required this.location,
-    this.isVirtual = false,
-    this.status = 'Confirmed',
-  });
+  Appointment({required this.center});
 }

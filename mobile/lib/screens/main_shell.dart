@@ -1,15 +1,11 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
-import 'dashboard_screen.dart';
-import 'medical_records_screen.dart';
+import 'home_screen.dart';
+import 'records_screen.dart';
+import 'detection_screen.dart';
 import 'appointments_screen.dart';
+import 'profile_screen.dart';
 
-/// Hosts the primary tabs behind a bottom navigation bar. The Figma
-/// prototype didn't include a nav-bar frame, but the app needs one so the
-/// separate screens (Dashboard / Records / Appointments) are all
-/// reachable - this is the natural structure for a real ASD-Sense app.
-/// Profile is intentionally left out of the tabs for now and can be added
-/// back in later.
 class MainShell extends StatefulWidget {
   const MainShell({super.key});
 
@@ -25,49 +21,58 @@ class _MainShellState extends State<MainShell> {
   @override
   Widget build(BuildContext context) {
     final screens = [
-      DashboardScreen(onNavigateTab: goToTab),
-      const MedicalRecordsScreen(),
-      const AppointmentsScreen(),
+      HomeScreen(onNavigateTab: goToTab),
+      RecordsScreen(onNavigateTab: goToTab),
+      DetectionScreen(onNavigateTab: goToTab),
+      AppointmentsScreen(onNavigateTab: goToTab),
+      ProfileScreen(onNavigateTab: goToTab),
     ];
 
     return Scaffold(
       body: IndexedStack(index: _index, children: screens),
       bottomNavigationBar: NavigationBarTheme(
         data: NavigationBarThemeData(
-          indicatorColor: AppColors.primary.withValues(alpha: 0.12),
-          labelTextStyle: WidgetStateProperty.resolveWith((states) {
-            final selected = states.contains(WidgetState.selected);
+          indicatorColor: Colors.transparent,
+          labelTextStyle: MaterialStateProperty.resolveWith((states) {
+            final selected = states.contains(MaterialState.selected);
             return TextStyle(
-              fontSize: 12,
-              fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-              color: selected ? AppColors.primary : AppColors.textGrey,
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              color: selected ? AppColors.primaryDark : AppColors.textGrey,
             );
           }),
         ),
         child: NavigationBar(
           selectedIndex: _index,
           onDestinationSelected: goToTab,
-          backgroundColor: AppColors.surface,
-          elevation: 3,
-          height: 66,
+          backgroundColor: AppColors.paper.withOpacity(0.97),
+          elevation: 0,
+          height: 68,
           destinations: const [
             NavigationDestination(
               icon: Icon(Icons.home_outlined, color: AppColors.textGrey),
-              selectedIcon: Icon(Icons.home, color: AppColors.primary),
+              selectedIcon: Icon(Icons.home, color: AppColors.primaryDark),
               label: 'Home',
             ),
             NavigationDestination(
-              icon:
-                  Icon(Icons.description_outlined, color: AppColors.textGrey),
-              selectedIcon: Icon(Icons.description, color: AppColors.primary),
+              icon: Icon(Icons.folder_outlined, color: AppColors.textGrey),
+              selectedIcon: Icon(Icons.folder, color: AppColors.primaryDark),
               label: 'Records',
             ),
             NavigationDestination(
-              icon:
-                  Icon(Icons.calendar_month_outlined, color: AppColors.textGrey),
-              selectedIcon:
-                  Icon(Icons.calendar_month, color: AppColors.primary),
+              icon: Icon(Icons.center_focus_weak_outlined, color: AppColors.textGrey),
+              selectedIcon: Icon(Icons.center_focus_strong, color: AppColors.primaryDark),
+              label: 'Detection',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.calendar_month_outlined, color: AppColors.textGrey),
+              selectedIcon: Icon(Icons.calendar_month, color: AppColors.primaryDark),
               label: 'Appointments',
+            ),
+            NavigationDestination(
+              icon: Icon(Icons.person_outline, color: AppColors.textGrey),
+              selectedIcon: Icon(Icons.person, color: AppColors.primaryDark),
+              label: 'Profile',
             ),
           ],
         ),
