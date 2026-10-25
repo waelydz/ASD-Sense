@@ -1,7 +1,9 @@
+import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import '../data/app_data.dart';
 import '../models/models.dart';
 import '../theme/app_theme.dart';
@@ -37,11 +39,20 @@ class DetectionScreen extends StatefulWidget {
 }
 
 class _DetectionScreenState extends State<DetectionScreen> {
+  // Replace 192.168.1.XX with your PC's IPv4 address from ipconfig
+  static const String _backendBaseUrl = 'http://192.168.1.226:8000';
+
   _Step _step = _Step.start;
   bool _consent = false;
   AnalysisPath _path = AnalysisPath.hand;
   String? _fileName;
   Uint8List? _fileBytes;
+
+  // API Response fields
+  String? _predictedClass;
+  double? _autismProbability;
+  double? _confidence;
+  String? _modelUsed;
 
   Future<void> _pickImage() async {
     if (AppData.instance.activeChild == null) {
@@ -50,14 +61,13 @@ class _DetectionScreenState extends State<DetectionScreen> {
       );
       return;
     }
-    
+
     final file = await FilePicker.pickFile(
       type: FileType.custom,
       allowedExtensions: const ['jpg', 'jpeg', 'png'],
     );
     if (!mounted || file == null) return;
-    
-    // In version 13, you extract bytes like this:
+
     final bytes = await file.readAsBytes();
     if (!mounted) return;
 
@@ -75,19 +85,64 @@ class _DetectionScreenState extends State<DetectionScreen> {
       );
       return;
     }
+    if (_fileBytes == null) return;
+
     setState(() => _step = _Step.progress);
-    await Future.delayed(const Duration(milliseconds: 1300));
-    if (!mounted) return;
 
-    AppData.instance.addRecord(
-      MedicalRecord(
-        fileName: '${_path.title} result',
-        type: RecordType.imaging,
-        date: _todayLabel(),
-      ),
-    );
+    try {
+      final endpoint = _path == AnalysisPath.hand
+          ? '$_backendBaseUrl/predict/gesture'
+          : '$_backendBaseUrl/predict/gesture'; // Will point to /predict/facial once facial models are added
 
-    setState(() => _step = _Step.result);
+      final request = http.MultipartRequest('POST', Uri.parse(endpoint));
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          'file',
+          _fileBytes!,
+          filename: _fileName ?? 'upload.jpg',
+        ),
+      );
+
+      final streamedResponse = await request.send().timeout(const Duration(seconds: 30));
+      final response = await http.Response.fromStream(streamedResponse);
+
+      if (!mounted) return;
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body) as Map<String, dynamic>;
+        final predClass = data['predicted_class'] as String?;
+        final prob = (data['autism_probability'] as num?)?.toDouble();
+        final conf = (data['confidence'] as num?)?.toDouble();
+        final modelName = data['model_name'] as String?;
+
+        AppData.instance.addRecord(
+          MedicalRecord(
+            fileName: '${_path.title} (${predClass ?? "result"})',
+            type: RecordType.imaging,
+            date: _todayLabel(),
+          ),
+        );
+
+        setState(() {
+          _predictedClass = predClass;
+          _autismProbability = prob;
+          _confidence = conf;
+          _modelUsed = modelName;
+          _step = _Step.result;
+        });
+      } else {
+        setState(() => _step = _Step.preview);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Server error (${response.statusCode}): ${response.body}')),
+        );
+      }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _step = _Step.preview);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not connect to server at $_backendBaseUrl')),
+      );
+    }
   }
 
   String _todayLabel() {
@@ -101,6 +156,10 @@ class _DetectionScreenState extends State<DetectionScreen> {
       _consent = false;
       _fileName = null;
       _fileBytes = null;
+      _predictedClass = null;
+      _autismProbability = null;
+      _confidence = null;
+      _modelUsed = null;
     });
   }
 
@@ -166,14 +225,21 @@ class _DetectionScreenState extends State<DetectionScreen> {
             children: [
               Text(_path.title, style: AppText.heading(16)),
               const SizedBox(height: 4),
-              Text(_path.uploadHint,
-                  style: const TextStyle(
-                      color: AppColors.textGrey, fontSize: 12.5, height: 1.4)),
+              Text(
+                _path.uploadHint,
+                style: const TextStyle(
+                  color: AppColors.textGrey,
+                  fontSize: 12.5,
+                  height: 1.4,
+                ),
+              ),
               const SizedBox(height: 14),
               SecondaryButton(label: 'Choose image', onPressed: _pickImage),
               const SizedBox(height: 8),
-              const Text('Supported formats: JPG, PNG.',
-                  style: TextStyle(color: AppColors.textFaint, fontSize: 12)),
+              const Text(
+                'Supported formats: JPG, PNG.',
+                style: TextStyle(color: AppColors.textFaint, fontSize: 12),
+              ),
             ],
           ),
         ),
@@ -201,8 +267,10 @@ class _DetectionScreenState extends State<DetectionScreen> {
                   alignment: Alignment.center,
                   child: _fileBytes != null
                       ? Image.memory(_fileBytes!, fit: BoxFit.contain)
-                      : Text(_fileName ?? 'No preview available',
-                          style: const TextStyle(color: AppColors.textGrey, fontSize: 13)),
+                      : Text(
+                          _fileName ?? 'No preview available',
+                          style: const TextStyle(color: AppColors.textGrey, fontSize: 13),
+                        ),
                 ),
               ),
               const SizedBox(height: 12),
@@ -224,8 +292,7 @@ class _DetectionScreenState extends State<DetectionScreen> {
             ),
           ),
           child: InkWell(
-            customBorder:
-                RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            customBorder: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
             onTap: () => setState(() => _consent = !_consent),
             child: Padding(
               padding: const EdgeInsets.all(12),
@@ -270,12 +337,16 @@ class _DetectionScreenState extends State<DetectionScreen> {
               const SizedBox(height: 10),
               const CircularProgressIndicator(color: AppColors.primary),
               const SizedBox(height: 16),
-              Text('Running ${_path.title.toLowerCase()}',
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(fontWeight: FontWeight.w700, color: AppColors.textDark)),
+              Text(
+                'Running ${_path.title.toLowerCase()}',
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontWeight: FontWeight.w700, color: AppColors.textDark),
+              ),
               const SizedBox(height: 4),
-              const Text('This may take a moment.',
-                  style: TextStyle(color: AppColors.textGrey, fontSize: 13)),
+              const Text(
+                'This may take a moment.',
+                style: TextStyle(color: AppColors.textGrey, fontSize: 13),
+              ),
               const SizedBox(height: 16),
               ClipRRect(
                 borderRadius: BorderRadius.circular(99),
@@ -294,6 +365,16 @@ class _DetectionScreenState extends State<DetectionScreen> {
   }
 
   Widget _buildResult() {
+    final isAutistic = _predictedClass == 'autistic';
+    final isNonAutistic = _predictedClass == 'non_autistic';
+    final confPercent = _confidence != null ? '${(_confidence! * 100).toStringAsFixed(1)}%' : 'N/A';
+
+    final headline = isAutistic
+        ? 'Some signs may be worth looking into further'
+        : isNonAutistic
+            ? 'No strong indicators detected in this screening'
+            : 'Screening result was inconclusive';
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -304,15 +385,18 @@ class _DetectionScreenState extends State<DetectionScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Pill(text: 'Preliminary evaluation', bg: AppColors.lavenderBg, fg: AppColors.lavender),
+              Pill(
+                text: 'Confidence: $confPercent (${_modelUsed ?? "AI Model"})',
+                bg: AppColors.lavenderBg,
+                fg: AppColors.lavender,
+              ),
               const SizedBox(height: 12),
-              Text('Some signs may be worth looking into further', style: AppText.heading(19)),
+              Text(headline, style: AppText.heading(19)),
               const SizedBox(height: 8),
               const Text(
-                'Based on what was submitted, we evaluate that this may be '
-                'possible. This is not a diagnosis. We recommend consulting '
-                'with a qualified medical professional for a full '
-                'assessment.',
+                'Based on what was submitted, this preliminary screening has been '
+                'logged to your child\'s records. This is not a medical diagnosis. '
+                'We recommend consulting with a qualified clinician for a full assessment.',
                 style: TextStyle(color: AppColors.primaryDark, fontSize: 13, height: 1.45),
               ),
             ],
@@ -327,7 +411,11 @@ class _DetectionScreenState extends State<DetectionScreen> {
                 title: 'Review details',
                 onTap: () {
                   ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('Evaluation details opened.')),
+                    SnackBar(
+                      content: Text(
+                        'Class: ${_predictedClass ?? "N/A"} | ASD Prob: $_autismProbability | Model: $_modelUsed',
+                      ),
+                    ),
                   );
                 },
               ),
