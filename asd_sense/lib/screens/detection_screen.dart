@@ -92,7 +92,7 @@ class _DetectionScreenState extends State<DetectionScreen> {
     try {
       final endpoint = _path == AnalysisPath.hand
           ? '$_backendBaseUrl/predict/gesture'
-          : '$_backendBaseUrl/predict/gesture'; // Will point to /predict/facial once facial models are added
+          : '$_backendBaseUrl/predict/facial'; //oops
 
       final request = http.MultipartRequest('POST', Uri.parse(endpoint));
       request.files.add(
