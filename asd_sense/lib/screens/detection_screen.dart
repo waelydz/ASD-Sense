@@ -40,7 +40,21 @@ class DetectionScreen extends StatefulWidget {
 
 class _DetectionScreenState extends State<DetectionScreen> {
   // Replace 192.168.1.XX with your PC's IPv4 address from ipconfig
-  static const String _backendBaseUrl = 'http://192.168.1.226:8000';
+  static const String _wifiBaseUrl = String.fromEnvironment(
+  'WIFI_BACKEND_URL',
+  defaultValue: 'http://10.255.131.126:8000',
+);
+static const String _usbFallbackUrl = 'http://127.0.0.1:8000';
+
+Future<String> _resolveBackendUrl() async {
+  try {
+    final res = await http
+        .get(Uri.parse('$_wifiBaseUrl/'))
+        .timeout(const Duration(seconds: 2));
+    if (res.statusCode == 200) return _wifiBaseUrl;
+  } catch (_) {}
+  return _usbFallbackUrl;
+}
 
   _Step _step = _Step.start;
   bool _consent = false;
@@ -89,7 +103,9 @@ class _DetectionScreenState extends State<DetectionScreen> {
 
     setState(() => _step = _Step.progress);
 
+    String _backendBaseUrl = _wifiBaseUrl;
     try {
+      _backendBaseUrl = await _resolveBackendUrl();
       final endpoint = _path == AnalysisPath.hand
           ? '$_backendBaseUrl/predict/gesture'
           : '$_backendBaseUrl/predict/facial'; //oops
