@@ -90,3 +90,16 @@ CREATE INDEX IF NOT EXISTS idx_appointments_user_id
 
 CREATE INDEX IF NOT EXISTS idx_appointments_scheduled_at
     ON Appointments(scheduled_at);
+
+-- Non-destructive auth migration: only new accounts with valid password hashes
+-- can sign in. Existing Users/Child_Profiles/Screening_Records remain intact.
+CREATE TABLE IF NOT EXISTS Auth_Sessions (
+    session_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    expires_at INTEGER NOT NULL,
+    revoked_at INTEGER,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES Users(user_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_id ON Auth_Sessions(user_id);
