@@ -13,6 +13,7 @@ import tf_keras
 import tensorflow_hub as hub
 
 from quantize_vit import BASE_DIR, MODELS_DIR, build_clean_facial_vit
+from child_profiles_api import create_child_profiles_router
 
 app = FastAPI(title="ASD-Sense Inference API", version="2.0")
 
@@ -26,6 +27,10 @@ app.add_middleware(
 
 DB_PATH = os.path.join(BASE_DIR, "asd_sense.db")
 SCHEMA_PATH = os.path.join(BASE_DIR, "asd_sense_database_schema.sql")
+
+# CRUD routes are registered without changing inference/model-loading code.
+# They remain inaccessible until verified authentication sets request.state.user_id.
+app.include_router(create_child_profiles_router(DB_PATH))
 
 # Model file paths in backend/models/
 GESTURE_MOBILENET_PATH = os.path.join(MODELS_DIR, "best_gesture_mobilenet.keras")
