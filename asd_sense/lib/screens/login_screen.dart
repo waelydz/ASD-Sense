@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import '../data/app_data.dart';
+import '../services/api_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common_widgets.dart';
 import 'main_shell.dart';
@@ -14,18 +16,37 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  bool _rememberMe = false;
+  bool _rememberMe = true;
   bool _loading = false;
 
   Future<void> _login() async {
+    if (_loading) return;
+    if (_emailController.text.trim().isEmpty || _passwordController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter your email and password.')),
+      );
+      return;
+    }
     setState(() => _loading = true);
-    await Future.delayed(const Duration(milliseconds: 500));
-    if (!mounted) return;
-    setState(() => _loading = false);
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const MainShell()),
-      (route) => false,
-    );
+    try {
+      await AppData.instance.signIn(
+        _emailController.text.trim(), _passwordController.text,
+        remember: _rememberMe,
+      );
+      if (!mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const MainShell()),
+        (route) => false,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e is ApiException
+            ? e.message : 'Unable to sign in. Check backend connectivity.')),
+      );
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   @override
@@ -91,11 +112,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const Spacer(),
                   TextButton(
-                    onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Password reset link sent.')),
-                      );
-                    },
+                    onPressed: null, // No password-reset endpoint exists yet.
                     style: TextButton.styleFrom(foregroundColor: AppColors.primaryDark),
                     child: const Text('Forgot password?'),
                   ),
@@ -111,9 +128,9 @@ class _LoginScreenState extends State<LoginScreen> {
               const OrDivider(),
               const SizedBox(height: 20),
               SecondaryButton(
-                label: 'Continue with Google',
+                label: 'Google sign-in not available',
                 leading: const GoogleLogo(),
-                onPressed: _login,
+                onPressed: null, // OAuth has not been implemented.
               ),
               const SizedBox(height: 36),
               Row(

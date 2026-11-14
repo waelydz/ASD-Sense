@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../data/app_data.dart';
+import '../services/api_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common_widgets.dart';
 import 'login_screen.dart';
@@ -25,13 +26,29 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   void _update() {
-    AppData.instance.updateGuardian(
-      name: _nameController.text.trim(),
-      phone: _phoneController.text.trim(),
-    );
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Profile updated.')),
+      const SnackBar(content: Text(
+        'Guardian profile editing is not yet connected to the server. '
+        'No changes were saved.',
+      )),
     );
+  }
+
+  Future<void> _logout() async {
+    try {
+      await AppData.instance.signOut();
+      if (!mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const LoginScreen()),
+        (route) => false,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e is ApiException
+            ? e.message : 'Could not sign out. Please retry.')),
+      );
+    }
   }
 
   void _openNotificationSettings() {
@@ -89,29 +106,6 @@ class _ProfileScreenState extends State<ProfileScreen> {
     );
   }
 
-  void _confirmDelete() {
-    showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Text('Delete account?'),
-        content: const Text('This will permanently remove your account and saved data.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
-          TextButton(
-            onPressed: () {
-              Navigator.of(ctx).pop();
-              Navigator.of(context).pushAndRemoveUntil(
-                MaterialPageRoute(builder: (_) => const LoginScreen()),
-                (route) => false,
-              );
-            },
-            child: const Text('Delete account', style: TextStyle(color: AppColors.danger)),
-          ),
-        ],
-      ),
-    );
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -197,7 +191,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     },
                   ),
                   const SizedBox(height: 12),
-                  DangerButton(label: 'Delete account', onPressed: _confirmDelete),
+                  SecondaryButton(label: 'Log out', onPressed: _logout),
+                  const SizedBox(height: 12),
+                  DangerButton(
+                    label: 'Delete account (not available)',
+                    onPressed: null,
+                  ),
                 ],
               ),
             ),
