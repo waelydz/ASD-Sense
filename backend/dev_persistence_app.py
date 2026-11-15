@@ -11,10 +11,12 @@ import sqlite3
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends, File, Form, HTTPException, UploadFile
 
 from auth_api import attach_auth
-from child_profiles_api import create_child_profiles_router
+from child_profiles_api import create_child_profiles_router, require_user_id
+from clinical_api import create_clinical_router, require_owned_child, save_screening_result
+from account_api import create_account_router
 
 BASE_DIR = Path(__file__).resolve().parent
 SCHEMA = BASE_DIR / "asd_sense_database_schema.sql"
@@ -42,7 +44,30 @@ def create_app(database_path: str | Path) -> FastAPI:
     def health():
         return {"status": "development-persistence-only"}
 
+    @app.post('/predict/{modality}')
+    async def synthetic_screening(modality: str, file: UploadFile = File(...),
+                                  child_id: int = Form(...),
+                                  user_id: int = Depends(require_user_id)):
+        """Persistence smoke test only; NEVER performs AI classification."""
+        if modality not in ('facial', 'gesture'):
+            raise HTTPException(404, detail='Unsupported screening modality')
+        require_owned_child(path, child_id, user_id)
+        content = await file.read(10 * 1024 * 1024 + 1)
+        if len(content) == 0 or len(content) > 10 * 1024 * 1024:
+            raise HTTPException(422, detail='Invalid test image size')
+        # The test server does not keep image bytes or filenames.
+        record_id = save_screening_result(path, child_id=child_id, user_id=user_id,
+            model_used='SYNTHETIC_NO_AI_TEST', predicted_class='inconclusive',
+            prob_autistic=0.5, confidence=0.5,
+            routing_tier='Synthetic persistence test (NOT inference)')
+        return {'screening_id': record_id, 'predicted_class': 'inconclusive',
+                'autism_probability': 0.5, 'confidence': 0.5,
+                'model_name': 'SYNTHETIC_NO_AI_TEST',
+                'routing': 'Synthetic persistence test only'}
+
     app.include_router(create_child_profiles_router(path))
+    app.include_router(create_clinical_router(path, path.parent / "asd_sense_dev_records"))
+    app.include_router(create_account_router(path))
     attach_auth(app, path)
     return app
 

@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'dart:convert';
 
 import 'package:asd_sense/data/app_data.dart';
@@ -54,12 +55,23 @@ Map<String, dynamic> get account => {
   'role': 'guardian',
 };
 
+http.Response? commonResponse(String path) {
+  if (path == '/api/account/preferences') return jsonResponse({
+    'push_notifications': true, 'email_notifications': false,
+  });
+  if (path.endsWith('/screenings') || path.endsWith('/medical-records') ||
+      path.endsWith('/appointments')) return jsonResponse([]);
+  return null;
+}
+
 void main() {
   test('profile creation uses SQLite child ID and survives AppData recreation', () async {
     final store = FakeSessionStore();
     final records = <Map<String, dynamic>>[];
     final client = MockClient((request) async {
       final path = request.url.path;
+      final common = commonResponse(path);
+      if (common != null) return common;
       if (path == '/api/auth/login') {
         return jsonResponse({'access_token': 'synthetic-token', 'user': account});
       }
@@ -94,6 +106,8 @@ void main() {
   test('non-remembered session does not auto-restore on restart', () async {
     final store = FakeSessionStore();
     final client = MockClient((request) async {
+      final common = commonResponse(request.url.path);
+      if (common != null) return common;
       if (request.url.path == '/api/auth/login') {
         return jsonResponse({'access_token': 'synthetic-token', 'user': account});
       }
@@ -111,6 +125,8 @@ void main() {
   test('ownership rejection never adds another guardian child', () async {
     final store = FakeSessionStore();
     final client = MockClient((request) async {
+      final common = commonResponse(request.url.path);
+      if (common != null) return common;
       if (request.url.path == '/api/auth/login') {
         return jsonResponse({'access_token': 'synthetic-token', 'user': account});
       }
@@ -133,6 +149,8 @@ void main() {
     final store = FakeSessionStore();
     final client = MockClient((request) async {
       final path = request.url.path;
+      final common = commonResponse(path);
+      if (common != null) return common;
       if (path == '/api/auth/login') {
         return jsonResponse({'access_token': 'synthetic-token', 'user': account});
       }
@@ -151,4 +169,66 @@ void main() {
     await expectLater(data.removeChild('42'), throwsA(isA<ApiException>()));
     expect(data.children.single.id, '42');
   });
+
+  test('inference request includes active child and verified bearer token', () async {
+    final store = FakeSessionStore();
+    var requestChild = '';
+    var authenticated = false;
+    final client = MockClient((request) async {
+      final path = request.url.path;
+      final common = commonResponse(path);
+      if (common != null) return common;
+      if (path == '/api/auth/login') {
+        return jsonResponse({'access_token': 'synthetic-token', 'user': account});
+      }
+      if (path == '/api/children') return jsonResponse([child(42)]);
+      if (path == '/predict/facial' && request.method == 'POST') {
+        requestChild = latin1.decode(request.bodyBytes);
+        authenticated = request.headers['authorization'] == 'Bearer synthetic-token';
+        return jsonResponse({
+          'screening_id': 55, 'predicted_class': 'inconclusive',
+          'model_name': 'Synthetic_Model', 'confidence': 0.5,
+          'autism_probability': 0.5,
+        });
+      }
+      return http.Response('not found', 404);
+    });
+    final data = AppData.testing(
+        api: ApiService(client: client, baseUrl: 'http://localhost:8000'), store: store);
+    await data.signIn('synthetic@example.test', 'temporary-long-password', remember: true);
+    expect(data.activeChildId, '42');
+    final result = await data.submitScreening(
+      modality: 'facial', filename: 'synthetic.png',
+      bytes: Uint8List.fromList([137, 80, 78, 71]),
+    );
+    expect(result['screening_id'], 55);
+    expect(authenticated, isTrue);
+    expect(requestChild, contains('name="child_id"'));
+    expect(requestChild, contains('42'));
+  });
+
+  test('appointment and medical requests target selected database child', () async {
+    final calledPaths = <String>[];
+    final client = MockClient((request) async {
+      calledPaths.add('${request.method} ${request.url.path}');
+      if (request.url.path == '/api/children/42/appointments' && request.method == 'POST') {
+        expect(request.headers['authorization'], 'Bearer test-token');
+        return jsonResponse({'appointment_id': 7}, 201);
+      }
+      if (request.url.path == '/api/children/42/medical-records' && request.method == 'POST') {
+        expect(request.headers['authorization'], 'Bearer test-token');
+        return jsonResponse({'record_id': 9}, 201);
+      }
+      return http.Response('not found', 404);
+    });
+    final api = ApiService(client: client, baseUrl: 'http://localhost:8000');
+    await api.addAppointment('test-token', '42',
+        scheduled: DateTime(2031, 5, 4, 15), location: 'Synthetic Provider');
+    await api.uploadMedicalRecord('test-token', '42',
+        filename: 'synthetic.pdf', bytes: Uint8List.fromList([37,80,68,70]),
+        recordType: 'document');
+    expect(calledPaths, contains('POST /api/children/42/appointments'));
+    expect(calledPaths, contains('POST /api/children/42/medical-records'));
+  });
+
 }

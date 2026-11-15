@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import '../models/models.dart';
 import '../services/api_service.dart';
@@ -66,23 +67,45 @@ class AppData extends ChangeNotifier {
     activeChildId = selectedStillExists
         ? selectedId
         : (children.isEmpty ? null : children.first.id);
-    // Records and appointments are not yet synchronized; clear stale previews.
+    // Clear cached data before reloading it for the verified child.
     recordsByChild.clear();
     appointmentByChild.clear();
+    screeningsByChild.clear();
+    notifyListeners();
+  }
+
+  void _clearCachedIdentity() {
+    _token = null;
+    _userId = null;
+    guardianName = '';
+    email = '';
+    phone = '';
+    children.clear();
+    activeChildId = null;
+    recordsByChild.clear();
+    appointmentByChild.clear();
+    screeningsByChild.clear();
     notifyListeners();
   }
 
   Future<void> _acceptSession(Map<String, dynamic> response,
       {required bool remember}) async {
-    final token = response['access_token'] as String;
-    final account = Map<String, dynamic>.from(response['user'] as Map);
-    final userId = account['user_id'] as int;
-    final remoteChildren = await _api.listChildren(token);
-    final selected = await _store.readSelectedChild(userId);
-    await _store.writeToken(remember ? token : null);
-    _token = token;
-    _setAccount(account);
-    _setChildren(remoteChildren, selected);
+    try {
+      final token = response['access_token'] as String;
+      final account = Map<String, dynamic>.from(response['user'] as Map);
+      final userId = account['user_id'] as int;
+      final remoteChildren = await _api.listChildren(token);
+      final selected = await _store.readSelectedChild(userId);
+      _token = token;
+      _setAccount(account);
+      _setChildren(remoteChildren, selected);
+      await _loadPreferences();
+      await refreshActiveClinicalData();
+      await _store.writeToken(remember ? token : null);
+    } catch (_) {
+      _clearCachedIdentity();
+      rethrow;
+    }
   }
 
   Future<void> signIn(String email, String password,
@@ -116,14 +139,18 @@ class AppData extends ChangeNotifier {
       _token = token;
       _setAccount(account);
       _setChildren(rows, selected);
+      await _loadPreferences();
+      await refreshActiveClinicalData();
       return true;
     } on ApiException catch (e) {
+      _clearCachedIdentity();
       if (e.statusCode == 401) {
         await _store.writeToken(null); // expired or revoked token
       }
       return false;
     } catch (_) {
       // Network unavailable or secure storage error; do not expose cached data.
+      _clearCachedIdentity();
       return false;
     }
   }
@@ -137,6 +164,7 @@ class AppData extends ChangeNotifier {
   Future<void> refreshChildren() async {
     final rows = await _api.listChildren(_requiredToken);
     _setChildren(rows, activeChildId);
+    await refreshActiveClinicalData();
   }
 
   Future<void> addChild(String name, DateTime dateOfBirth) async {
@@ -168,6 +196,7 @@ class AppData extends ChangeNotifier {
     children.removeWhere((c) => c.id == id);
     recordsByChild.remove(id);
     appointmentByChild.remove(id);
+    screeningsByChild.remove(id);
     if (activeChildId == id) {
       activeChildId = children.isEmpty ? null : children.first.id;
       notifyListeners();
@@ -186,6 +215,7 @@ class AppData extends ChangeNotifier {
     await _store.writeSelectedChild(_userId!, id);
     activeChildId = id;
     notifyListeners();
+    await refreshActiveClinicalData();
   }
 
   Future<void> signOut() async {
@@ -200,59 +230,155 @@ class AppData extends ChangeNotifier {
     } catch (_) {
       throw const ApiException('Could not clear local sign-in credentials. Retry logout.');
     }
-    _token = null;
-    _userId = null;
-    guardianName = '';
-    email = '';
-    phone = '';
-    children.clear();
-    activeChildId = null;
-    recordsByChild.clear();
-    appointmentByChild.clear();
+    _clearCachedIdentity();
+  }
+
+  Future<void> _loadPreferences() async {
+    final prefs = await _api.preferences(_requiredToken);
+    pushNotifications = prefs['push_notifications'] as bool;
+    emailNotifications = prefs['email_notifications'] as bool;
     notifyListeners();
   }
 
-  /// Guardian profile editing and notification preferences remain local-only
-  /// until their own authenticated backend persistence endpoint is implemented.
-  void updateGuardian({required String name, required String phone}) {
-    guardianName = name;
-    this.phone = phone;
+  Future<void> updateGuardian({required String name, required String phone}) async {
+    final user = await _api.updateGuardian(_requiredToken, name.trim(), phone.trim());
+    _setAccount(user);
     notifyListeners();
   }
 
-  void setNotificationPrefs({bool? push, bool? emailPref}) {
-    if (push != null) pushNotifications = push;
-    if (emailPref != null) emailNotifications = emailPref;
+  Future<void> setNotificationPrefs({bool? push, bool? emailPref}) async {
+    final prefs = await _api.savePreferences(_requiredToken,
+        push: push ?? pushNotifications, email: emailPref ?? emailNotifications);
+    pushNotifications = prefs['push_notifications'] as bool;
+    emailNotifications = prefs['email_notifications'] as bool;
     notifyListeners();
   }
 
   final Map<String, List<MedicalRecord>> recordsByChild = {};
+  final Map<String, List<ScreeningSummary>> screeningsByChild = {};
+  final Map<String, Appointment> appointmentByChild = {};
 
   List<MedicalRecord> get activeRecords =>
       activeChildId == null ? [] : (recordsByChild[activeChildId] ?? []);
 
-  void addRecord(MedicalRecord record) {
-    if (activeChildId == null) return;
-    recordsByChild.putIfAbsent(activeChildId!, () => []);
-    recordsByChild[activeChildId!]!.insert(0, record);
-    notifyListeners();
-  }
-
-  void removeRecord(MedicalRecord record) {
-    if (activeChildId == null) return;
-    recordsByChild[activeChildId!]?.remove(record);
-    notifyListeners();
-  }
-
-  final Map<String, Appointment> appointmentByChild = {};
+  List<ScreeningSummary> get activeScreenings =>
+      activeChildId == null ? [] : (screeningsByChild[activeChildId] ?? []);
 
   Appointment? get activeAppointment =>
       activeChildId == null ? null : appointmentByChild[activeChildId];
 
-  void setAppointment(Appointment appt) {
-    if (activeChildId == null) return;
-    appointmentByChild[activeChildId!] = appt;
+  Future<void> refreshActiveClinicalData() async {
+    final selected = activeChildId;
+    if (selected == null) return;
+    final token = _requiredToken;
+    final rows = await Future.wait([
+      _api.medicalRecords(token, selected),
+      _api.appointments(token, selected),
+      _api.screenings(token, selected),
+    ]);
+    // Ignore an earlier request if the user changed profiles during the fetch.
+    if (activeChildId != selected || !isSignedIn) return;
+    recordsByChild[selected] = rows[0].map((row) => MedicalRecord(
+      id: row['record_id'] as int,
+      fileName: row['file_name'] as String,
+      type: row['record_type'] == 'imaging' ? RecordType.imaging : RecordType.document,
+      date: row['created_at'] as String,
+    )).toList();
+    appointmentByChild.remove(selected);
+    final plans = rows[1].where((row) => row['status'] != 'cancelled').toList();
+    plans.sort((a, b) => DateTime.parse(a['scheduled_at'] as String)
+        .compareTo(DateTime.parse(b['scheduled_at'] as String)));
+    final now = DateTime.now();
+    Map<String, dynamic>? nextPlan;
+    for (final row in plans) {
+      if (!DateTime.parse(row['scheduled_at'] as String).isBefore(now)) {
+        nextPlan = row;
+        break;
+      }
+    }
+    nextPlan ??= plans.isNotEmpty ? plans.last : null;
+    if (nextPlan != null) {
+      final location = (nextPlan['location'] as String?) ?? '';
+      CareCenter? match;
+      for (final c in centers) {
+        if (c.name == location) { match = c; break; }
+      }
+      appointmentByChild[selected] = Appointment(
+        id: nextPlan['appointment_id'] as int,
+        center: match ?? CareCenter(name: location, address: 'Contact provider to confirm', city: ''),
+        scheduledAt: DateTime.parse(nextPlan['scheduled_at'] as String).toLocal(),
+        status: nextPlan['status'] as String,
+      );
+    }
+    screeningsByChild[selected] = rows[2].map((row) => ScreeningSummary(
+      id: row['screening_id'] as int,
+      modelName: row['model_name'] as String,
+      predictedClass: row['predicted_class'] as String,
+      date: row['screening_date'] as String,
+    )).toList();
     notifyListeners();
+  }
+
+  Future<void> uploadMedicalRecord({required String fileName,
+      required Uint8List bytes, required RecordType type}) async {
+    final selected = activeChildId;
+    if (selected == null) throw const ApiException('Select a child first.');
+    await _api.uploadMedicalRecord(_requiredToken, selected,
+      filename: fileName, bytes: bytes,
+      recordType: type == RecordType.imaging ? 'imaging' : 'document');
+    await refreshActiveClinicalData();
+  }
+
+  Future<Uint8List> downloadMedicalRecord(MedicalRecord record) async {
+    final selected = activeChildId;
+    if (selected == null) throw const ApiException('Select a child first.');
+    return _api.downloadMedicalRecord(_requiredToken, selected, record.id);
+  }
+
+  Future<void> removeRecord(MedicalRecord record) async {
+    final selected = activeChildId;
+    if (selected == null) return;
+    await _api.deleteMedicalRecord(_requiredToken, selected, record.id);
+    await refreshActiveClinicalData();
+  }
+
+  Future<void> requestAppointment(CareCenter center, DateTime scheduled) async {
+    final selected = activeChildId;
+    if (selected == null) throw const ApiException('Select a child first.');
+    await _api.addAppointment(_requiredToken, selected,
+        scheduled: scheduled, location: center.name);
+    await refreshActiveClinicalData();
+  }
+
+  Future<void> rescheduleAppointment(DateTime scheduled) async {
+    final selected = activeChildId;
+    final appointment = activeAppointment;
+    if (selected == null || appointment == null) return;
+    await _api.rescheduleAppointment(_requiredToken, selected, appointment.id, scheduled);
+    await refreshActiveClinicalData();
+  }
+
+  Future<void> cancelAppointment() async {
+    final selected = activeChildId;
+    final appointment = activeAppointment;
+    if (selected == null || appointment == null) return;
+    await _api.cancelAppointment(_requiredToken, selected, appointment.id);
+    await refreshActiveClinicalData();
+  }
+
+  Future<Map<String, dynamic>> submitScreening({required String modality,
+      required String filename, required Uint8List bytes}) async {
+    final selected = activeChildId;
+    if (selected == null) throw const ApiException('Select a child before screening.');
+    final response = await _api.predict(_requiredToken, selected,
+        modality: modality, filename: filename, bytes: bytes);
+    try {
+      await refreshActiveClinicalData();
+    } catch (_) {
+      // Inference succeeded and the result is saved. A failed history reload
+      // must not encourage submitting the same image twice.
+    }
+    return response;
   }
 
   /// Reference list of care providers in and around University City, Sharjah.

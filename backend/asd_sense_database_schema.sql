@@ -103,3 +103,28 @@ CREATE TABLE IF NOT EXISTS Auth_Sessions (
     FOREIGN KEY (user_id) REFERENCES Users(user_id) ON DELETE CASCADE
 );
 CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_id ON Auth_Sessions(user_id);
+
+-- Additive persistence migration; existing tables and rows remain unchanged.
+-- Physical document bytes live outside the Git checkout and use random filenames.
+CREATE TABLE IF NOT EXISTS Medical_Records (
+    record_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    child_id INTEGER NOT NULL,
+    uploaded_by_user_id INTEGER NOT NULL,
+    file_name TEXT NOT NULL,
+    storage_key TEXT NOT NULL UNIQUE,
+    content_type TEXT NOT NULL,
+    file_size INTEGER NOT NULL CHECK (file_size >= 1),
+    record_type TEXT NOT NULL CHECK (record_type IN ('document', 'imaging')),
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (child_id) REFERENCES Child_Profiles(child_id) ON DELETE RESTRICT,
+    FOREIGN KEY (uploaded_by_user_id) REFERENCES Users(user_id) ON DELETE RESTRICT
+);
+CREATE INDEX IF NOT EXISTS idx_medical_records_child_id ON Medical_Records(child_id);
+
+CREATE TABLE IF NOT EXISTS User_Preferences (
+    user_id INTEGER PRIMARY KEY,
+    push_notifications INTEGER NOT NULL DEFAULT 1 CHECK (push_notifications IN (0, 1)),
+    email_notifications INTEGER NOT NULL DEFAULT 0 CHECK (email_notifications IN (0, 1)),
+    updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES Users(user_id) ON DELETE CASCADE
+);

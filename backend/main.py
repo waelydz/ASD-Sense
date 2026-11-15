@@ -4,7 +4,7 @@ import sqlite3
 import h5py
 import numpy as np
 from PIL import Image
-from fastapi import FastAPI, UploadFile, File
+from fastapi import FastAPI, UploadFile, File, Form, Depends
 from fastapi.middleware.cors import CORSMiddleware
 
 import tensorflow as tf
@@ -13,7 +13,9 @@ import tf_keras
 import tensorflow_hub as hub
 
 from quantize_vit import BASE_DIR, MODELS_DIR, build_clean_facial_vit
-from child_profiles_api import create_child_profiles_router
+from child_profiles_api import create_child_profiles_router, require_user_id
+from clinical_api import create_clinical_router, require_owned_child, save_screening_result, list_screenings
+from account_api import create_account_router
 from auth_api import attach_auth
 
 app = FastAPI(title="ASD-Sense Inference API", version="2.0")
@@ -32,6 +34,10 @@ SCHEMA_PATH = os.path.join(BASE_DIR, "asd_sense_database_schema.sql")
 # CRUD routes are registered without changing inference/model-loading code.
 # They remain inaccessible until verified authentication sets request.state.user_id.
 app.include_router(create_child_profiles_router(DB_PATH))
+app.include_router(create_clinical_router(
+    DB_PATH, os.environ.get("ASD_SENSE_RECORDS_DIR", os.path.join(os.path.expanduser("~"), ".asd_sense_private_records"))
+))
+app.include_router(create_account_router(DB_PATH))
 attach_auth(app, DB_PATH)
 
 # Model file paths in backend/models/
@@ -272,6 +278,7 @@ def preprocess_external_vit(image_bytes: bytes) -> np.ndarray:
 
 def log_screening_to_db(
     child_id: int,
+    user_id: int,
     model_used: str,
     predicted_class: str,
     prob_autistic: float,
@@ -279,30 +286,13 @@ def log_screening_to_db(
     filename: str,
     routing_tier: str,
 ) -> int:
-    with sqlite3.connect(DB_PATH) as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            """
-            INSERT INTO Screening_Records (
-                child_id, performed_by_user_id, model_name, model_version,
-                predicted_class, autism_probability, confidence, image_reference, notes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                child_id,
-                1,
-                model_used,
-                "1.0",
-                predicted_class,
-                round(prob_autistic, 4),
-                round(confidence, 4),
-                filename,
-                routing_tier,
-            ),
-        )
-        screening_id = cursor.lastrowid
-        conn.commit()
-    return screening_id
+    """Save model output for the verified owner. Do not retain source-image names."""
+    return save_screening_result(
+        DB_PATH, child_id=child_id, user_id=user_id,
+        model_used=model_used, predicted_class=predicted_class,
+        prob_autistic=prob_autistic, confidence=confidence,
+        routing_tier=routing_tier,
+    )
 
 
 @app.get("/")
@@ -318,7 +308,9 @@ def read_root():
 
 
 @app.post("/predict/gesture")
-async def analyze_gesture(file: UploadFile = File(...), child_id: int = 1):
+async def analyze_gesture(file: UploadFile = File(...), child_id: int = Form(...),
+                          user_id: int = Depends(require_user_id)):
+    require_owned_child(DB_PATH, child_id, user_id)
     image_bytes = await file.read()
     model_used = "Gesture_MobileNetV2"
     routing_tier = "Edge / API screening"
@@ -355,7 +347,7 @@ async def analyze_gesture(file: UploadFile = File(...), child_id: int = 1):
         predicted_class = "non_autistic"
 
     screening_id = log_screening_to_db(
-        child_id, model_used, predicted_class, prob_autistic, confidence, file.filename, routing_tier
+        child_id, user_id, model_used, predicted_class, prob_autistic, confidence, file.filename, routing_tier
     )
 
     return {
@@ -370,7 +362,9 @@ async def analyze_gesture(file: UploadFile = File(...), child_id: int = 1):
 
 
 @app.post("/predict/facial")
-async def analyze_facial(file: UploadFile = File(...), child_id: int = 1):
+async def analyze_facial(file: UploadFile = File(...), child_id: int = Form(...),
+                         user_id: int = Depends(require_user_id)):
+    require_owned_child(DB_PATH, child_id, user_id)
     image_bytes = await file.read()
     raw_input = preprocess_raw_255(image_bytes)
     model_used = "Facial_MobileNetV2"
@@ -411,7 +405,7 @@ async def analyze_facial(file: UploadFile = File(...), child_id: int = 1):
         predicted_class = "non_autistic"
 
     screening_id = log_screening_to_db(
-        child_id, model_used, predicted_class, prob_autistic, confidence, file.filename, routing_tier
+        child_id, user_id, model_used, predicted_class, prob_autistic, confidence, file.filename, routing_tier
     )
 
     return {
@@ -426,13 +420,6 @@ async def analyze_facial(file: UploadFile = File(...), child_id: int = 1):
 
 
 @app.get("/records/screenings")
-def get_screenings(child_id: int = 1):
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.row_factory = sqlite3.Row
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT * FROM Screening_Records WHERE child_id = ? ORDER BY screening_date DESC",
-            (child_id,),
-        )
-        rows = [dict(row) for row in cursor.fetchall()]
-    return {"child_id": child_id, "screenings": rows}
+def get_screenings(child_id: int, user_id: int = Depends(require_user_id)):
+    """Legacy response shape retained, but no anonymous/default-child access."""
+    return {"child_id": child_id, "screenings": list_screenings(DB_PATH, child_id, user_id)}

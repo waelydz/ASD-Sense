@@ -22,11 +22,13 @@ class Child {
 enum RecordType { document, imaging }
 
 class MedicalRecord {
+  final int id;
   final String fileName;
   final RecordType type;
   final String date;
 
   MedicalRecord({
+    required this.id,
     required this.fileName,
     required this.type,
     required this.date,
@@ -71,7 +73,21 @@ class CareCenter {
 }
 
 class Appointment {
+  final int id;
   final CareCenter center;
+  final DateTime scheduledAt;
+  final String status;
 
-  Appointment({required this.center});
+  Appointment({required this.id, required this.center,
+    required this.scheduledAt, required this.status});
+}
+
+class ScreeningSummary {
+  final int id;
+  final String modelName;
+  final String predictedClass;
+  final String date;
+
+  ScreeningSummary({required this.id, required this.modelName,
+    required this.predictedClass, required this.date});
 }

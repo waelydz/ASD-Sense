@@ -1,6 +1,7 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import '../data/app_data.dart';
+import '../services/api_service.dart';
 import '../models/models.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common_widgets.dart';
@@ -26,7 +27,8 @@ class _RecordsScreenState extends State<RecordsScreen> {
     }
 
     RecordType type = RecordType.document;
-    String? pickedFileName;
+    PlatformFile? pickedFile;
+    bool uploading = false;
 
     await showModalBottomSheet(
       context: context,
@@ -40,10 +42,10 @@ class _RecordsScreenState extends State<RecordsScreen> {
                 type: FileType.custom,
                 allowedExtensions: type == RecordType.imaging
                     ? ['jpg', 'jpeg', 'png', 'pdf']
-                    : ['pdf', 'doc', 'docx'],
+                    : ['pdf', 'docx'],
               );
               if (file != null) {
-                setSheetState(() => pickedFileName = file.name);
+                setSheetState(() => pickedFile = file);
               }
             }
 
@@ -102,29 +104,29 @@ class _RecordsScreenState extends State<RecordsScreen> {
                         padding: const EdgeInsets.all(16),
                         decoration: BoxDecoration(
                           border: Border.all(
-                            color: pickedFileName == null ? AppColors.inputBorder : AppColors.primary,
+                            color: pickedFile == null ? AppColors.inputBorder : AppColors.primary,
                             style: BorderStyle.solid,
                           ),
                           borderRadius: BorderRadius.circular(14),
-                          color: pickedFileName == null ? AppColors.paper : AppColors.successBg,
+                          color: pickedFile == null ? AppColors.paper : AppColors.successBg,
                         ),
                         child: Row(
                           children: [
                             Icon(
-                              pickedFileName == null
+                              pickedFile == null
                                   ? Icons.upload_file_outlined
                                   : Icons.check_circle,
-                              color: pickedFileName == null
+                              color: pickedFile == null
                                   ? AppColors.textGrey
                                   : AppColors.primary,
                             ),
                             const SizedBox(width: 12),
                             Expanded(
                               child: Text(
-                                pickedFileName ?? 'Choose a file to upload',
+                                pickedFile?.name ?? 'Choose a file to upload',
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
-                                  color: pickedFileName == null
+                                  color: pickedFile == null
                                       ? AppColors.textFaint
                                       : AppColors.textDark,
                                   fontWeight: FontWeight.w600,
@@ -137,19 +139,29 @@ class _RecordsScreenState extends State<RecordsScreen> {
                     ),
                     const SizedBox(height: 20),
                     PrimaryButton(
-                      label: 'Add record',
-                      onPressed: pickedFileName == null
-                          ? null
-                          : () {
-                              AppData.instance.addRecord(
-                                MedicalRecord(
-                                  fileName: pickedFileName!,
-                                  type: type,
-                                  date: _todayLabel(),
-                                ),
-                              );
-                              Navigator.of(ctx).pop();
-                            },
+                      label: uploading ? 'Uploading...' : 'Upload record',
+                      onPressed: pickedFile == null || uploading ? null : () async {
+                        setSheetState(() => uploading = true);
+                        try {
+                          final file = pickedFile!;
+                          final bytes = await file.readAsBytes();
+                          await AppData.instance.uploadMedicalRecord(
+                            fileName: file.name, bytes: bytes, type: type,
+                          );
+                          if (!ctx.mounted) return;
+                          Navigator.of(ctx).pop();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Medical record saved to the backend.')),
+                          );
+                        } catch (e) {
+                          if (!ctx.mounted) return;
+                          ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(
+                            content: Text(e is ApiException ? e.message : 'Upload failed.'),
+                          ));
+                        } finally {
+                          if (ctx.mounted) setSheetState(() => uploading = false);
+                        }
+                      },
                     ),
                     const SizedBox(height: 12),
                   ],
@@ -162,9 +174,41 @@ class _RecordsScreenState extends State<RecordsScreen> {
     );
   }
 
-  String _todayLabel() {
-    final now = DateTime.now();
-    return '${now.day}/${now.month}/${now.year}';
+  Future<void> _download(MedicalRecord record) async {
+    try {
+      final bytes = await AppData.instance.downloadMedicalRecord(record);
+      await FilePicker.saveFile(fileName: record.fileName, bytes: bytes);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(e is ApiException ? e.message : 'Download failed.'),
+      ));
+    }
+  }
+
+  Future<void> _delete(MedicalRecord record) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete saved record?'),
+        content: const Text('This removes the stored document and cannot be undone.'),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(ctx).pop(false),
+              child: const Text('Keep')),
+          TextButton(onPressed: () => Navigator.of(ctx).pop(true),
+              child: const Text('Delete')),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await AppData.instance.removeRecord(record);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(e is ApiException ? e.message : 'Deletion failed.'),
+      ));
+    }
   }
 
   IconData _iconFor(RecordType type) =>
@@ -278,15 +322,30 @@ class _RecordsScreenState extends State<RecordsScreen> {
                                 '${filtered[i].typeLabel} · ${filtered[i].date}',
                                 style: const TextStyle(color: AppColors.textGrey, fontSize: 12),
                               ),
+                              onTap: () => _download(filtered[i]),
                               trailing: IconButton(
+                                tooltip: 'Delete saved file',
                                 icon: const Icon(Icons.close, size: 18, color: AppColors.textFaint),
-                                onPressed: () => AppData.instance.removeRecord(filtered[i]),
+                                onPressed: () => _delete(filtered[i]),
                               ),
                             ),
                           ],
                         ],
                       ),
                     ),
+                  if (_tabIndex == 0 && data.activeScreenings.isNotEmpty) ...[
+                    const SizedBox(height: 20),
+                    Text('Screening history (not a diagnosis)', style: AppText.heading(16)),
+                    const SizedBox(height: 10),
+                    SectionCard(child: Column(children: [
+                      for (final screen in data.activeScreenings)
+                        ListTile(
+                          leading: const Icon(Icons.assignment_outlined),
+                          title: Text(screen.modelName),
+                          subtitle: Text('${screen.predictedClass} · ${screen.date}'),
+                        ),
+                    ])),
+                  ],
                   const SizedBox(height: 16),
                   PrimaryButton(
                     label: 'Add medical record',

@@ -169,10 +169,13 @@ def create_child_profiles_router(db_path: str | Path) -> APIRouter:
             appointment_count = connection.execute(
                 "SELECT COUNT(*) FROM Appointments WHERE child_id=?", (child_id,)
             ).fetchone()[0]
-            if screening_count or appointment_count:
+            medical_count = connection.execute(
+                "SELECT COUNT(*) FROM Medical_Records WHERE child_id=?", (child_id,)
+            ).fetchone()[0]
+            if screening_count or appointment_count or medical_count:
                 raise HTTPException(
                     status_code=409,
-                    detail="Cannot delete a child profile with screening or appointment history",
+                    detail="Cannot delete a child profile with screening, appointment or medical history",
                 )
             connection.execute(
                 "DELETE FROM Child_Profiles WHERE child_id=? AND user_id=?",

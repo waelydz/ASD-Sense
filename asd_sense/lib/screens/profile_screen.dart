@@ -25,13 +25,31 @@ class _ProfileScreenState extends State<ProfileScreen> {
     super.dispose();
   }
 
-  void _update() {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text(
-        'Guardian profile editing is not yet connected to the server. '
-        'No changes were saved.',
-      )),
-    );
+  Future<void> _update() async {
+    try {
+      await AppData.instance.updateGuardian(
+          name: _nameController.text, phone: _phoneController.text);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Guardian profile saved.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(e is ApiException ? e.message : 'Could not save profile.'),
+      ));
+    }
+  }
+
+  Future<void> _setPreference({bool? push, bool? emailPref}) async {
+    try {
+      await AppData.instance.setNotificationPrefs(push: push, emailPref: emailPref);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(e is ApiException ? e.message : 'Could not save preference.'),
+      ));
+    }
   }
 
   Future<void> _logout() async {
@@ -79,9 +97,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     title: const Text('Push notifications'),
                     subtitle: const Text('Appointment reminders and results'),
                     value: data.pushNotifications,
-                    onChanged: (v) {
-                      data.setNotificationPrefs(push: v);
-                      setSheetState(() {});
+                    onChanged: (v) async {
+                      await _setPreference(push: v);
+                      if (ctx.mounted) setSheetState(() {});
                     },
                   ),
                   SwitchListTile(
@@ -90,9 +108,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     title: const Text('Email notifications'),
                     subtitle: const Text('Account and appointment updates'),
                     value: data.emailNotifications,
-                    onChanged: (v) {
-                      data.setNotificationPrefs(emailPref: v);
-                      setSheetState(() {});
+                    onChanged: (v) async {
+                      await _setPreference(emailPref: v);
+                      if (ctx.mounted) setSheetState(() {});
                     },
                   ),
                   const SizedBox(height: 8),
