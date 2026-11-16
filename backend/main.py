@@ -4,7 +4,9 @@ import sqlite3
 import h5py
 import numpy as np
 from PIL import Image
-from fastapi import FastAPI, UploadFile, File, Form, Depends
+from typing import Literal
+
+from fastapi import FastAPI, UploadFile, File, Form, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 import tensorflow as tf
@@ -17,6 +19,9 @@ from child_profiles_api import create_child_profiles_router, require_user_id
 from clinical_api import create_clinical_router, require_owned_child, save_screening_result, list_screenings
 from account_api import create_account_router
 from auth_api import attach_auth
+from clinic_api import clinician_dependency, create_clinic_router, save_clinic_screening
+from family_api import create_family_router
+import screening_images
 
 app = FastAPI(title="ASD-Sense Inference API", version="2.0")
 
@@ -33,11 +38,19 @@ SCHEMA_PATH = os.path.join(BASE_DIR, "asd_sense_database_schema.sql")
 
 # CRUD routes are registered without changing inference/model-loading code.
 # They remain inaccessible until verified authentication sets request.state.user_id.
+RECORDS_DIR = os.environ.get(
+    "ASD_SENSE_RECORDS_DIR", os.path.join(os.path.expanduser("~"), ".asd_sense_private_records"))
 app.include_router(create_child_profiles_router(DB_PATH))
-app.include_router(create_clinical_router(
-    DB_PATH, os.environ.get("ASD_SENSE_RECORDS_DIR", os.path.join(os.path.expanduser("~"), ".asd_sense_private_records"))
-))
+app.include_router(create_clinical_router(DB_PATH, RECORDS_DIR))
 app.include_router(create_account_router(DB_PATH))
+# Clinician portal (specialist_web): clinician/admin sessions only.
+# Screened images, for the clinician's review (screening_images.py).
+SCREENINGS_DIR = os.environ.get(
+    "ASD_SENSE_SCREENINGS_DIR", os.path.join(os.path.expanduser("~"), ".asd_sense_private_screenings"))
+app.include_router(create_clinic_router(DB_PATH, RECORDS_DIR, SCREENINGS_DIR))
+# Notifications and password reset for guardians (family_api.py).
+app.include_router(create_family_router(DB_PATH))
+require_clinician = clinician_dependency(DB_PATH)
 attach_auth(app, DB_PATH)
 
 # Model file paths in backend/models/
@@ -307,11 +320,8 @@ def read_root():
     }
 
 
-@app.post("/predict/gesture")
-async def analyze_gesture(file: UploadFile = File(...), child_id: int = Form(...),
-                          user_id: int = Depends(require_user_id)):
-    require_owned_child(DB_PATH, child_id, user_id)
-    image_bytes = await file.read()
+def score_gesture(image_bytes: bytes) -> tuple[float, float, str, str]:
+    """Returns (prob_autistic, confidence, model_used, routing_tier)."""
     model_used = "Gesture_MobileNetV2"
     routing_tier = "Edge / API screening"
 
@@ -338,34 +348,11 @@ async def analyze_gesture(file: UploadFile = File(...), child_id: int = Form(...
         confidence = max(prob_autistic, 1.0 - prob_autistic)
         model_used = "Gesture_ViT-B16"
         routing_tier = "Cloud clinical diagnosis"
-
-    if confidence < INCONCLUSIVE_THRESHOLD:
-        predicted_class = "inconclusive"
-    elif prob_autistic >= 0.5:
-        predicted_class = "autistic"
-    else:
-        predicted_class = "non_autistic"
-
-    screening_id = log_screening_to_db(
-        child_id, user_id, model_used, predicted_class, prob_autistic, confidence, file.filename, routing_tier
-    )
-
-    return {
-        "screening_id": screening_id,
-        "filename": file.filename,
-        "model_name": model_used,
-        "routing": routing_tier,
-        "predicted_class": predicted_class,
-        "autism_probability": round(prob_autistic, 4),
-        "confidence": round(confidence, 4),
-    }
+    return prob_autistic, confidence, model_used, routing_tier
 
 
-@app.post("/predict/facial")
-async def analyze_facial(file: UploadFile = File(...), child_id: int = Form(...),
-                         user_id: int = Depends(require_user_id)):
-    require_owned_child(DB_PATH, child_id, user_id)
-    image_bytes = await file.read()
+def score_facial(image_bytes: bytes) -> tuple[float, float, str, str]:
+    """Returns (prob_autistic, confidence, model_used, routing_tier)."""
     raw_input = preprocess_raw_255(image_bytes)
     model_used = "Facial_MobileNetV2"
     routing_tier = "Edge / API screening"
@@ -396,27 +383,76 @@ async def analyze_facial(file: UploadFile = File(...), child_id: int = Form(...)
         confidence = max(prob_autistic, 1.0 - prob_autistic)
         model_used = facial_vit_model_label
         routing_tier = "Quantized ViT diagnosis"
+    return prob_autistic, confidence, model_used, routing_tier
 
+
+SCORERS = {"gesture": score_gesture, "facial": score_facial}
+
+
+def classify(prob_autistic: float, confidence: float) -> str:
     if confidence < INCONCLUSIVE_THRESHOLD:
-        predicted_class = "inconclusive"
-    elif prob_autistic >= 0.5:
-        predicted_class = "autistic"
-    else:
-        predicted_class = "non_autistic"
+        return "inconclusive"
+    if prob_autistic >= 0.5:
+        return "autistic"
+    return "non_autistic"
 
-    screening_id = log_screening_to_db(
-        child_id, user_id, model_used, predicted_class, prob_autistic, confidence, file.filename, routing_tier
-    )
 
+def screening_response(screening_id: int, filename: str | None, model_used: str, routing_tier: str,
+                       predicted_class: str, prob_autistic: float, confidence: float) -> dict:
     return {
         "screening_id": screening_id,
-        "filename": file.filename,
+        "filename": filename,
         "model_name": model_used,
         "routing": routing_tier,
         "predicted_class": predicted_class,
         "autism_probability": round(prob_autistic, 4),
         "confidence": round(confidence, 4),
     }
+
+
+async def _guardian_screening(modality: str, file: UploadFile, child_id: int, user_id: int) -> dict:
+    require_owned_child(DB_PATH, child_id, user_id)
+    image_bytes = await file.read()
+    prob_autistic, confidence, model_used, routing_tier = SCORERS[modality](image_bytes)
+    predicted_class = classify(prob_autistic, confidence)
+    screening_id = log_screening_to_db(
+        child_id, user_id, model_used, predicted_class, prob_autistic, confidence, file.filename, routing_tier
+    )
+    screening_images.save(DB_PATH, SCREENINGS_DIR, screening_id, image_bytes)
+    return screening_response(screening_id, file.filename, model_used, routing_tier,
+                              predicted_class, prob_autistic, confidence)
+
+
+@app.post("/predict/gesture")
+async def analyze_gesture(file: UploadFile = File(...), child_id: int = Form(...),
+                          user_id: int = Depends(require_user_id)):
+    return await _guardian_screening("gesture", file, child_id, user_id)
+
+
+@app.post("/predict/facial")
+async def analyze_facial(file: UploadFile = File(...), child_id: int = Form(...),
+                         user_id: int = Depends(require_user_id)):
+    return await _guardian_screening("facial", file, child_id, user_id)
+
+
+@app.post("/api/clinic/predict/{modality}")
+async def clinic_screening(modality: Literal["gesture", "facial"], file: UploadFile = File(...),
+                           child_id: int = Form(...), clinician=Depends(require_clinician)):
+    """A screening run by a clinician in the portal, for any patient in the clinic."""
+    with sqlite3.connect(DB_PATH) as conn:
+        if conn.execute("SELECT 1 FROM Child_Profiles WHERE child_id = ?", (child_id,)).fetchone() is None:
+            raise HTTPException(status_code=404, detail="Patient not found.")
+    image_bytes = await file.read()
+    prob_autistic, confidence, model_used, routing_tier = SCORERS[modality](image_bytes)
+    predicted_class = classify(prob_autistic, confidence)
+    screening_id = save_clinic_screening(
+        DB_PATH, clinician, child_id=child_id, modality=modality, model_used=model_used,
+        predicted_class=predicted_class, prob_autistic=prob_autistic, confidence=confidence,
+        routing_tier=routing_tier,
+    )
+    screening_images.save(DB_PATH, SCREENINGS_DIR, screening_id, image_bytes)
+    return screening_response(screening_id, file.filename, model_used, routing_tier,
+                              predicted_class, prob_autistic, confidence)
 
 
 @app.get("/records/screenings")

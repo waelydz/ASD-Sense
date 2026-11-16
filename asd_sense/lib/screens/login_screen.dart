@@ -5,6 +5,7 @@ import '../theme/app_theme.dart';
 import '../widgets/common_widgets.dart';
 import 'main_shell.dart';
 import 'create_account_screen.dart';
+import 'forgot_password_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -46,6 +47,18 @@ class _LoginScreenState extends State<LoginScreen> {
       );
     } finally {
       if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _forgotPassword() async {
+    final changed = await Navigator.of(context).push<bool>(MaterialPageRoute(
+      builder: (_) => ForgotPasswordScreen(initialEmail: _emailController.text.trim()),
+    ));
+    if (changed == true && mounted) {
+      _passwordController.clear();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Password changed. Sign in with your new password.')),
+      );
     }
   }
 
@@ -112,7 +125,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const Spacer(),
                   TextButton(
-                    onPressed: null, // No password-reset endpoint exists yet.
+                    onPressed: _forgotPassword,
                     style: TextButton.styleFrom(foregroundColor: AppColors.primaryDark),
                     child: const Text('Forgot password?'),
                   ),

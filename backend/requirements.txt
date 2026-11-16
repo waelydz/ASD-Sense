@@ -1,0 +1,18 @@
+# Everything the backend needs: main.py loads TensorFlow at startup.
+#   .venv\Scripts\python -m pip install -r requirements.txt
+fastapi>=0.110
+uvicorn>=0.29
+python-multipart>=0.0.9
+pydantic>=2
+numpy
+pillow
+h5py
+tensorflow
+tf-keras
+tensorflow-hub
+# tensorflow-hub imports pkg_resources, which setuptools 81+ no longer ships.
+setuptools<81
+
+# Only for running the tests (python -m pytest tests -q):
+pytest
+httpx

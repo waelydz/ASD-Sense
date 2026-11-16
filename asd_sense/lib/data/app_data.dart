@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import '../models/models.dart';
@@ -75,6 +76,8 @@ class AppData extends ChangeNotifier {
   }
 
   void _clearCachedIdentity() {
+    stopNotificationPolling();
+    notifications.clear();
     _token = null;
     _userId = null;
     guardianName = '';
@@ -315,6 +318,9 @@ class AppData extends ChangeNotifier {
       modelName: row['model_name'] as String,
       predictedClass: row['predicted_class'] as String,
       date: row['screening_date'] as String,
+      reviewAction: row['review_action'] as String?,
+      reviewerName: row['reviewer_name'] as String?,
+      reviewedAt: row['reviewed_at'] as String?,
     )).toList();
     notifyListeners();
   }
@@ -380,6 +386,78 @@ class AppData extends ChangeNotifier {
     }
     return response;
   }
+
+  // ---- updates from the clinic ------------------------------------------------
+
+  final List<AppNotification> notifications = [];
+  int get unreadNotifications => notifications.where((n) => !n.isRead).length;
+
+  /// Called with each update that arrives while the app is open, if the
+  /// guardian left push notifications on (the main screen shows a banner).
+  void Function(AppNotification notification)? onNotification;
+
+  Timer? _notificationTimer;
+  bool _loadedNotifications = false;
+
+  /// Checks for updates now and then every [every] while signed in. Started
+  /// by the main screen, so it only runs while the app is in use.
+  void startNotificationPolling({Duration every = const Duration(seconds: 15)}) {
+    _notificationTimer?.cancel();
+    _notificationTimer = Timer.periodic(every, (_) => refreshNotifications().catchError((_) {}));
+    unawaited(refreshNotifications().catchError((_) {}));
+  }
+
+  void stopNotificationPolling() {
+    _notificationTimer?.cancel();
+    _notificationTimer = null;
+    _loadedNotifications = false;
+  }
+
+  Future<void> refreshNotifications() async {
+    final token = _token;
+    if (token == null) return;
+    final rows = await _api.notifications(token);
+    if (_token != token) return; // signed out meanwhile
+    final known = notifications.map((n) => n.id).toSet();
+    final fresh = rows.map((row) => AppNotification(
+      id: row['notification_id'] as int,
+      title: row['title'] as String,
+      body: row['body'] as String,
+      createdAt: row['created_at'] as String,
+      isRead: row['is_read'] as bool,
+    )).toList();
+    final arrived = fresh.where((n) => !n.isRead && !known.contains(n.id)).toList();
+    notifications
+      ..clear()
+      ..addAll(fresh);
+    notifyListeners();
+    // Updates that came in while the app was closed are in the list; only
+    // the ones that arrive while it is open get a banner.
+    if (_loadedNotifications && arrived.isNotEmpty) {
+      if (pushNotifications) arrived.forEach(onNotification ?? (_) {});
+      // A review or status change also changes what the screens show.
+      try {
+        await refreshActiveClinicalData();
+      } catch (_) {
+        // The next check retries.
+      }
+    }
+    _loadedNotifications = true;
+  }
+
+  Future<void> markNotificationsRead() async {
+    if (unreadNotifications == 0) return;
+    await _api.markNotificationsRead(_requiredToken);
+    await refreshNotifications();
+  }
+
+  // ---- password reset (signed out) ----------------------------------------
+
+  Future<void> requestPasswordReset(String email) => _api.forgotPassword(email.trim());
+
+  Future<void> resetPassword({required String email, required String code,
+      required String newPassword}) =>
+      _api.resetPassword(email: email.trim(), code: code.trim(), newPassword: newPassword);
 
   /// Reference list of care providers in and around University City, Sharjah.
   /// Details come from public listings; confirm services and hours before visiting.

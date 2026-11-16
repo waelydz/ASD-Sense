@@ -77,12 +77,17 @@ def save_screening_result(db_path: str | Path, *, child_id: int, user_id: int,
 
 
 def list_screenings(db_path: str | Path, child_id: int, user_id: int) -> list[dict]:
+    # A clinician's review is shared as its outcome (review_action), who
+    # reviewed it and when. The clinical note and finding stay in the clinic.
     with database(db_path) as conn:
         ensure_owned_child(conn, child_id, user_id)
-        rows = conn.execute('''SELECT screening_id, child_id, screening_date,
-            model_name, model_version, predicted_class, autism_probability,
-            confidence, notes, created_at FROM Screening_Records
-            WHERE child_id=? ORDER BY screening_date DESC, screening_id DESC''',
+        rows = conn.execute('''SELECT s.screening_id, s.child_id, s.screening_date,
+            s.model_name, s.model_version, s.predicted_class, s.autism_probability,
+            s.confidence, s.notes, s.created_at,
+            r.action AS review_action, r.reviewer_name, r.reviewed_at
+            FROM Screening_Records s
+            LEFT JOIN Screening_Reviews r ON r.screening_id = s.screening_id
+            WHERE s.child_id=? ORDER BY s.screening_date DESC, s.screening_id DESC''',
             (child_id,)).fetchall()
         return [dict(row) for row in rows]
 

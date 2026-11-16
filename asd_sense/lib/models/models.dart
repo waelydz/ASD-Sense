@@ -88,6 +88,38 @@ class ScreeningSummary {
   final String predictedClass;
   final String date;
 
+  /// The clinician's review, when there is one. Only the outcome is shared
+  /// with families; the clinical note stays in the clinic.
+  final String? reviewAction;
+  final String? reviewerName;
+  final String? reviewedAt;
+
   ScreeningSummary({required this.id, required this.modelName,
-    required this.predictedClass, required this.date});
+    required this.predictedClass, required this.date,
+    this.reviewAction, this.reviewerName, this.reviewedAt});
+
+  bool get isReviewed => reviewAction != null;
+
+  /// What the family should do next, in plain words.
+  String get nextStep => switch (reviewAction) {
+        'refer_diagnostic' =>
+          'A full developmental assessment is recommended. The clinic will contact you to arrange it.',
+        'rescreen' => 'The clinician would like a new image. Please submit another screening.',
+        'monitor' => 'No action is needed now. The clinician will look again at the next visit.',
+        'no_further_action' => 'No further action is needed.',
+        _ => 'Waiting for a clinician to review.',
+      };
+}
+
+/// An update from the clinic: a screening was reviewed or an appointment's
+/// status changed.
+class AppNotification {
+  final int id;
+  final String title;
+  final String body;
+  final String createdAt;
+  final bool isRead;
+
+  AppNotification({required this.id, required this.title, required this.body,
+    required this.createdAt, required this.isRead});
 }

@@ -184,6 +184,34 @@ class ApiService {
       Map<String, dynamic>.from(await _send('PUT', '/api/account/preferences', token: token,
           body: {'push_notifications': push, 'email_notifications': email}));
 
+  /// Updates from the clinic (reviews, appointment status), newest first.
+  Future<List<Map<String, dynamic>>> notifications(String token) =>
+      _getRows(token, '/api/notifications');
+
+  Future<void> markNotificationsRead(String token) async {
+    await _send('POST', '/api/notifications/read', token: token);
+  }
+
+  /// Emails a 6-digit reset code. Succeeds whether or not the email has an
+  /// account, so the app cannot tell (and does not say) which is the case.
+  Future<void> forgotPassword(String email) async {
+    await _send('POST', '/api/auth/forgot', body: {'email': email});
+  }
+
+  Future<void> resetPassword({required String email, required String code,
+      required String newPassword}) async {
+    try {
+      await _send('POST', '/api/auth/reset',
+          body: {'email': email, 'code': code, 'new_password': newPassword});
+    } on ApiException catch (e) {
+      if (e.statusCode == 400) {
+        throw const ApiException('That code is not valid or has expired. Request a new one.',
+            statusCode: 400);
+      }
+      rethrow;
+    }
+  }
+
   Future<List<Map<String, dynamic>>> screenings(String token, String childId) =>
       _getRows(token, '/api/children/$childId/screenings');
 

@@ -340,9 +340,30 @@ class _RecordsScreenState extends State<RecordsScreen> {
                     SectionCard(child: Column(children: [
                       for (final screen in data.activeScreenings)
                         ListTile(
-                          leading: const Icon(Icons.assignment_outlined),
+                          leading: Icon(
+                            screen.isReviewed ? Icons.assignment_turned_in_outlined : Icons.assignment_outlined,
+                            color: screen.isReviewed ? AppColors.sage : null,
+                          ),
                           title: Text(screen.modelName),
-                          subtitle: Text('${screen.predictedClass} · ${screen.date}'),
+                          isThreeLine: true,
+                          subtitle: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('${screen.predictedClass} · ${screen.date}'),
+                              const SizedBox(height: 4),
+                              Text(
+                                screen.isReviewed
+                                    ? 'Reviewed${screen.reviewerName == null ? '' : ' by ${screen.reviewerName}'}: '
+                                        '${screen.nextStep}'
+                                    : screen.nextStep,
+                                style: TextStyle(
+                                  color: screen.isReviewed ? AppColors.textDark : AppColors.textFaint,
+                                  fontSize: 12.5,
+                                  height: 1.3,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                     ])),
                   ],
