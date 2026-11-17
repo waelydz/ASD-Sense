@@ -1,11 +1,10 @@
-import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
 import '../data/app_data.dart';
-import '../models/models.dart';
+import '../services/api_service.dart';
+
 import '../theme/app_theme.dart';
 import '../widgets/common_widgets.dart';
 
@@ -39,23 +38,6 @@ class DetectionScreen extends StatefulWidget {
 }
 
 class _DetectionScreenState extends State<DetectionScreen> {
-  // Replace 192.168.1.XX with your PC's IPv4 address from ipconfig
-  static const String _wifiBaseUrl = String.fromEnvironment(
-  'WIFI_BACKEND_URL',
-  defaultValue: 'http://10.255.131.126:8000',
-);
-static const String _usbFallbackUrl = 'http://127.0.0.1:8000';
-
-Future<String> _resolveBackendUrl() async {
-  try {
-    final res = await http
-        .get(Uri.parse('$_wifiBaseUrl/'))
-        .timeout(const Duration(seconds: 2));
-    if (res.statusCode == 200) return _wifiBaseUrl;
-  } catch (_) {}
-  return _usbFallbackUrl;
-}
-
   _Step _step = _Step.start;
   bool _consent = false;
   AnalysisPath _path = AnalysisPath.hand;
@@ -99,71 +81,28 @@ Future<String> _resolveBackendUrl() async {
       );
       return;
     }
-    if (_fileBytes == null) return;
-
+    if (_fileBytes == null || AppData.instance.activeChildId == null) return;
     setState(() => _step = _Step.progress);
-
-    String _backendBaseUrl = _wifiBaseUrl;
     try {
-      _backendBaseUrl = await _resolveBackendUrl();
-      final endpoint = _path == AnalysisPath.hand
-          ? '$_backendBaseUrl/predict/gesture'
-          : '$_backendBaseUrl/predict/facial'; //oops
-
-      final request = http.MultipartRequest('POST', Uri.parse(endpoint));
-      request.files.add(
-        http.MultipartFile.fromBytes(
-          'file',
-          _fileBytes!,
-          filename: _fileName ?? 'upload.jpg',
-        ),
+      final data = await AppData.instance.submitScreening(
+        modality: _path == AnalysisPath.hand ? 'gesture' : 'facial',
+        filename: _fileName ?? 'synthetic-image.jpg', bytes: _fileBytes!,
       );
-
-      final streamedResponse = await request.send().timeout(const Duration(seconds: 30));
-      final response = await http.Response.fromStream(streamedResponse);
-
       if (!mounted) return;
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body) as Map<String, dynamic>;
-        final predClass = data['predicted_class'] as String?;
-        final prob = (data['autism_probability'] as num?)?.toDouble();
-        final conf = (data['confidence'] as num?)?.toDouble();
-        final modelName = data['model_name'] as String?;
-
-        AppData.instance.addRecord(
-          MedicalRecord(
-            fileName: '${_path.title} (${predClass ?? "result"})',
-            type: RecordType.imaging,
-            date: _todayLabel(),
-          ),
-        );
-
-        setState(() {
-          _predictedClass = predClass;
-          _autismProbability = prob;
-          _confidence = conf;
-          _modelUsed = modelName;
-          _step = _Step.result;
-        });
-      } else {
-        setState(() => _step = _Step.preview);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Server error (${response.statusCode}): ${response.body}')),
-        );
-      }
-    } catch (e) {
+      setState(() {
+        _predictedClass = data['predicted_class'] as String?;
+        _autismProbability = (data['autism_probability'] as num?)?.toDouble();
+        _confidence = (data['confidence'] as num?)?.toDouble();
+        _modelUsed = data['model_name'] as String?;
+        _step = _Step.result;
+      });
+    } catch (error) {
       if (!mounted) return;
       setState(() => _step = _Step.preview);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not connect to server at $_backendBaseUrl')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(error is ApiException ? error.message : 'Screening was not completed.'),
+      ));
     }
-  }
-
-  String _todayLabel() {
-    final now = DateTime.now();
-    return '${now.day}/${now.month}/${now.year}';
   }
 
   void _reset() {

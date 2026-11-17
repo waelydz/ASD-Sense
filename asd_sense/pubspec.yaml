@@ -13,6 +13,10 @@ dependencies:
   google_fonts: ^6.2.1
   file_picker: ^13.1.0
   http: ^1.6.0
+  flutter_secure_storage: 11.2.0
+  # Clerk (Google sign-in). Beta SDK: pinned exactly, breaking changes expected before 1.0.
+  clerk_flutter: 0.0.18-beta
+  clerk_auth: 0.0.18-beta
 
 dev_dependencies:
   flutter_test:

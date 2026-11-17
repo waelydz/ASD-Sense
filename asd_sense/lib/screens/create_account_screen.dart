@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import '../data/app_data.dart';
+import '../services/api_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common_widgets.dart';
+import '../widgets/google_sign_in_button.dart';
 import 'main_shell.dart';
 
 class CreateAccountScreen extends StatefulWidget {
@@ -24,34 +26,48 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
       _confirmController.text.isNotEmpty &&
       _confirmController.text != _passwordController.text;
 
-  Future<void> _createAccount({bool viaGoogle = false}) async {
-    if (!viaGoogle && _nameController.text.trim().isEmpty) {
+  Future<void> _createAccount() async {
+    if (_loading) return;
+    if (_nameController.text.trim().isEmpty || _emailController.text.trim().isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter your full name to continue.')),
+        const SnackBar(content: Text('Enter your name and email address.')),
       );
       return;
     }
-    if (!viaGoogle && _showConfirm && _confirmController.text != _passwordController.text) {
+    if (_passwordController.text.length < 12) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Passwords do not match. Please confirm your password.')),
+        const SnackBar(content: Text('Password must be at least 12 characters.')),
+      );
+      return;
+    }
+    if (_passwordController.text != _confirmController.text) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Passwords do not match.')),
       );
       return;
     }
     setState(() => _loading = true);
-    await Future.delayed(const Duration(milliseconds: 500));
-    if (!mounted) return;
-    setState(() => _loading = false);
-
-    AppData.instance.completeSignUp(
-      name: viaGoogle ? 'Google Account' : _nameController.text.trim(),
-      email: _emailController.text.trim(),
-      phone: _phoneController.text.trim(),
-    );
-
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const MainShell()),
-      (route) => false,
-    );
+    try {
+      await AppData.instance.register(
+        name: _nameController.text.trim(),
+        email: _emailController.text.trim(),
+        phone: _phoneController.text.trim(),
+        password: _passwordController.text,
+      );
+      if (!mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const MainShell()),
+        (route) => false,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e is ApiException
+            ? e.message : 'Unable to create account. Check backend connectivity.')),
+      );
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
   }
 
   @override
@@ -132,16 +148,12 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
               PrimaryButton(
                 label: 'Create account',
                 loading: _loading,
-                onPressed: () => _createAccount(),
+                onPressed: _createAccount,
               ),
               const SizedBox(height: 20),
               const OrDivider(),
               const SizedBox(height: 20),
-              SecondaryButton(
-                label: 'Sign up with Google',
-                leading: const GoogleLogo(),
-                onPressed: () => _createAccount(viaGoogle: true),
-              ),
+              const GoogleSignInButton(),
             ],
           ),
         ),

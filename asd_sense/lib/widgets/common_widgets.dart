@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
+import 'notifications_sheet.dart';
 
 class Pill extends StatelessWidget {
   final String text;
@@ -86,6 +87,8 @@ class MainHeader extends StatelessWidget {
           ),
         ),
         const Pill(text: 'Legal Guardian', bg: AppColors.sageBg, fg: AppColors.sage),
+        const SizedBox(width: 8),
+        const NotificationBell(),
         const SizedBox(width: 8),
         AppIconButton(icon: Icons.person_outline, onPressed: onProfileTap),
       ],

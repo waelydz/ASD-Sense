@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../data/app_data.dart';
+import '../services/api_service.dart';
 import '../models/models.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common_widgets.dart';
@@ -23,17 +24,73 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
     super.dispose();
   }
 
-  void _book(CareCenter center) {
+  Future<DateTime?> _chooseDateTime({DateTime? initial}) async {
+    final now = DateTime.now();
+    final date = await showDatePicker(
+      context: context,
+      firstDate: DateTime(now.year, now.month, now.day),
+      lastDate: DateTime(now.year + 5),
+      initialDate: initial != null && initial.isAfter(now) ? initial : now,
+    );
+    if (!mounted || date == null) return null;
+    final time = await showTimePicker(
+      context: context,
+      initialTime: initial != null ? TimeOfDay.fromDateTime(initial) : TimeOfDay.now(),
+    );
+    if (time == null) return null;
+    final selected = DateTime(date.year, date.month, date.day, time.hour, time.minute);
+    if (!selected.isAfter(DateTime.now())) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Choose a future appointment time.')),
+      );
+      return null;
+    }
+    return selected;
+  }
+
+  Future<void> _book(CareCenter center) async {
     if (AppData.instance.activeChild == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Add a child profile first, from Home.')),
       );
       return;
     }
-    AppData.instance.setAppointment(Appointment(center: center));
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Appointment requested at ${center.name}.')),
-    );
+    final selected = await _chooseDateTime();
+    if (selected == null) return;
+    try {
+      await AppData.instance.requestAppointment(center, selected);
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Personal appointment reminder saved. Contact the clinic to confirm.'),
+      ));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(e is ApiException ? e.message : 'Could not save appointment.'),
+      ));
+    }
+  }
+
+  Future<void> _reschedule() async {
+    final date = await _chooseDateTime(initial: AppData.instance.activeAppointment?.scheduledAt);
+    if (date == null) return;
+    try {
+      await AppData.instance.rescheduleAppointment(date);
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(e is ApiException ? e.message : 'Rescheduling failed.'),
+      ));
+    }
+  }
+
+  Future<void> _cancel() async {
+    try {
+      await AppData.instance.cancelAppointment();
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(e is ApiException ? e.message : 'Cancellation failed.'),
+      ));
+    }
   }
 
   Color _kindFg(CenterKind k) => switch (k) {
@@ -118,7 +175,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
               color: Colors.white.withOpacity(0.18),
               borderRadius: BorderRadius.circular(999),
             ),
-            child: const Text('Appointment requested',
+            child: const Text('Personal reminder — not provider-confirmed',
                 style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700)),
           ),
           const SizedBox(height: 14),
@@ -128,6 +185,18 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
             appt.center.address,
             style: TextStyle(color: Colors.white.withOpacity(0.85), fontSize: 13),
           ),
+          const SizedBox(height: 8),
+          Text('Planned: ${appt.scheduledAt.day}/${appt.scheduledAt.month}/${appt.scheduledAt.year} '
+              '${appt.scheduledAt.hour.toString().padLeft(2, '0')}:'
+              '${appt.scheduledAt.minute.toString().padLeft(2, '0')}',
+              style: const TextStyle(color: Colors.white, fontSize: 13)),
+          const SizedBox(height: 8),
+          Wrap(spacing: 8, children: [
+            TextButton(onPressed: _reschedule,
+                child: const Text('Reschedule', style: TextStyle(color: Colors.white))),
+            TextButton(onPressed: _cancel,
+                child: const Text('Cancel reminder', style: TextStyle(color: Colors.white))),
+          ]),
           if (appt.center.phone != null) ...[
             const SizedBox(height: 10),
             Text(
@@ -215,7 +284,7 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
                     padding: const EdgeInsets.symmetric(horizontal: 20),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                   ),
-                  child: Text(booked ? 'Requested' : 'Book',
+                  child: Text(booked ? 'Planned' : 'Save reminder',
                       style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 13.5)),
                 ),
               ),

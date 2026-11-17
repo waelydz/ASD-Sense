@@ -1,0 +1,30 @@
+name: specialist_web
+description: "ASD-Sense specialist (clinician) web portal."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+# Same versions as ../asd_sense/pubspec.yaml so both apps behave the same.
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.6
+  google_fonts: ^6.2.1
+  file_picker: ^13.1.0
+  http: ^1.6.0
+  shared_preferences: ^2.5.6
+  url_launcher: ^6.3.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^3.0.0
+  # Only for test/backend_sync_test.dart, which drives both apps together.
+  # Not part of the portal build.
+  asd_sense:
+    path: ../asd_sense
+
+flutter:
+  uses-material-design: true

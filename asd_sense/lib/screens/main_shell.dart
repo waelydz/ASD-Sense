@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import '../data/app_data.dart';
+import '../models/models.dart';
 import '../theme/app_theme.dart';
+import '../widgets/notifications_sheet.dart';
 import 'home_screen.dart';
 import 'records_screen.dart';
 import 'detection_screen.dart';
@@ -17,6 +20,31 @@ class _MainShellState extends State<MainShell> {
   int _index = 0;
 
   void goToTab(int index) => setState(() => _index = index);
+
+  @override
+  void initState() {
+    super.initState();
+    // Updates from the clinic are checked while the app is open; ones that
+    // arrive get a banner if push notifications are on (Profile > Notifications).
+    AppData.instance.onNotification = _showBanner;
+    AppData.instance.startNotificationPolling();
+  }
+
+  @override
+  void dispose() {
+    AppData.instance.stopNotificationPolling();
+    AppData.instance.onNotification = null;
+    super.dispose();
+  }
+
+  void _showBanner(AppNotification n) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text('${n.title}: ${n.body}', maxLines: 3, overflow: TextOverflow.ellipsis),
+      duration: const Duration(seconds: 6),
+      action: SnackBarAction(label: 'View', onPressed: () => showNotificationsSheet(context)),
+    ));
+  }
 
   @override
   Widget build(BuildContext context) {

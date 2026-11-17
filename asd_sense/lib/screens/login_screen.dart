@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
+import '../data/app_data.dart';
+import '../services/api_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common_widgets.dart';
+import '../widgets/google_sign_in_button.dart';
 import 'main_shell.dart';
 import 'create_account_screen.dart';
+import 'forgot_password_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -14,18 +18,49 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
-  bool _rememberMe = false;
+  bool _rememberMe = true;
   bool _loading = false;
 
   Future<void> _login() async {
+    if (_loading) return;
+    if (_emailController.text.trim().isEmpty || _passwordController.text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Enter your email and password.')),
+      );
+      return;
+    }
     setState(() => _loading = true);
-    await Future.delayed(const Duration(milliseconds: 500));
-    if (!mounted) return;
-    setState(() => _loading = false);
-    Navigator.of(context).pushAndRemoveUntil(
-      MaterialPageRoute(builder: (_) => const MainShell()),
-      (route) => false,
-    );
+    try {
+      await AppData.instance.signIn(
+        _emailController.text.trim(), _passwordController.text,
+        remember: _rememberMe,
+      );
+      if (!mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const MainShell()),
+        (route) => false,
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e is ApiException
+            ? e.message : 'Unable to sign in. Check backend connectivity.')),
+      );
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _forgotPassword() async {
+    final changed = await Navigator.of(context).push<bool>(MaterialPageRoute(
+      builder: (_) => ForgotPasswordScreen(initialEmail: _emailController.text.trim()),
+    ));
+    if (changed == true && mounted) {
+      _passwordController.clear();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Password changed. Sign in with your new password.')),
+      );
+    }
   }
 
   @override
@@ -91,11 +126,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   ),
                   const Spacer(),
                   TextButton(
-                    onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Password reset link sent.')),
-                      );
-                    },
+                    onPressed: _forgotPassword,
                     style: TextButton.styleFrom(foregroundColor: AppColors.primaryDark),
                     child: const Text('Forgot password?'),
                   ),
@@ -110,11 +141,7 @@ class _LoginScreenState extends State<LoginScreen> {
               const SizedBox(height: 20),
               const OrDivider(),
               const SizedBox(height: 20),
-              SecondaryButton(
-                label: 'Continue with Google',
-                leading: const GoogleLogo(),
-                onPressed: _login,
-              ),
+              const GoogleSignInButton(),
               const SizedBox(height: 36),
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,

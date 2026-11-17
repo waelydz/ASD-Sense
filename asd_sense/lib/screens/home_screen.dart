@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../data/app_data.dart';
 import '../models/models.dart';
+import '../services/api_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common_widgets.dart';
 
@@ -55,10 +56,17 @@ class HomeScreen extends StatelessWidget {
                         padding: const EdgeInsets.only(bottom: 10),
                         child: InkWell(
                           borderRadius: BorderRadius.circular(14),
-                          onTap: () {
-                            data.switchChild(child.id);
-                            setSheetState(() {});
-                            Navigator.of(ctx).pop();
+                          onTap: () async {
+                            try {
+                              await data.switchChild(child.id);
+                              if (ctx.mounted) Navigator.of(ctx).pop();
+                            } catch (_) {
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  const SnackBar(content: Text('Could not save selected child.')),
+                                );
+                              }
+                            }
                           },
                           child: Container(
                             padding: const EdgeInsets.all(12),
@@ -148,6 +156,7 @@ class HomeScreen extends StatelessWidget {
   void _openChildFormSheet(BuildContext context, {Child? existing}) {
     final nameController = TextEditingController(text: existing?.name ?? '');
     DateTime? dob = existing?.dateOfBirth;
+    bool saving = false;
     final now = DateTime.now();
     final firstDate = DateTime(now.year - 18, now.month, now.day);
 
@@ -204,7 +213,8 @@ class HomeScreen extends StatelessWidget {
                       const SizedBox(height: 20),
                       PrimaryButton(
                         label: existing != null ? 'Save changes' : 'Add child',
-                        onPressed: () {
+                        loading: saving,
+                        onPressed: () async {
                           final name = nameController.text.trim();
                           if (name.isEmpty || dob == null) {
                             ScaffoldMessenger.of(context).showSnackBar(
@@ -214,16 +224,29 @@ class HomeScreen extends StatelessWidget {
                             );
                             return;
                           }
-                          if (existing != null) {
-                            AppData.instance.updateChild(
-                              existing.id,
-                              name: name,
-                              dateOfBirth: dob!,
-                            );
-                          } else {
-                            AppData.instance.addChild(name, dob!);
+                          if (saving) return;
+                          setSheetState(() => saving = true);
+                          try {
+                            if (existing != null) {
+                              await AppData.instance.updateChild(
+                                existing.id,
+                                name: name,
+                                dateOfBirth: dob!,
+                              );
+                            } else {
+                              await AppData.instance.addChild(name, dob!);
+                            }
+                            if (ctx.mounted) Navigator.of(ctx).pop();
+                          } catch (e) {
+                            if (context.mounted) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(content: Text(e is ApiException
+                                    ? e.message : 'Could not save child profile.')),
+                              );
+                            }
+                          } finally {
+                            if (ctx.mounted) setSheetState(() => saving = false);
                           }
-                          Navigator.of(ctx).pop();
                         },
                       ),
                       if (existing != null) ...[
@@ -258,8 +281,8 @@ class HomeScreen extends StatelessWidget {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text("Delete ${child.name}'s profile?"),
         content: const Text(
-          'This will permanently remove this profile along with its medical '
-          'records and appointment. This cannot be undone.',
+          'This profile can only be deleted if it has no screening or appointment '
+          'history. Existing records will never be silently deleted.',
         ),
         actions: [
           TextButton(
@@ -267,13 +290,25 @@ class HomeScreen extends StatelessWidget {
             child: const Text('Cancel'),
           ),
           TextButton(
-            onPressed: () {
-              AppData.instance.removeChild(child.id);
-              Navigator.of(dialogCtx).pop();
-              Navigator.of(sheetContext).pop();
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Child profile deleted.')),
-              );
+            onPressed: () async {
+              try {
+                await AppData.instance.removeChild(child.id);
+                if (dialogCtx.mounted) Navigator.of(dialogCtx).pop();
+                if (sheetContext.mounted) Navigator.of(sheetContext).pop();
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Child profile deleted.')),
+                  );
+                }
+              } catch (e) {
+                if (dialogCtx.mounted) Navigator.of(dialogCtx).pop();
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(content: Text(e is ApiException
+                        ? e.message : 'Could not delete this child profile.')),
+                  );
+                }
+              }
             },
             child: const Text('Delete', style: TextStyle(color: AppColors.danger)),
           ),
