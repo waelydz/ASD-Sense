@@ -290,6 +290,8 @@ is closed. `manage.py` reads `ASD_SENSE_DB_PATH` too.
 | `ASD_SENSE_SMTP_USER` | | Mail login, e.g. a Gmail address |
 | `ASD_SENSE_SMTP_PASSWORD` | | Mail password (for Gmail, an app password) |
 | `ASD_SENSE_SMTP_FROM` | the SMTP user | Sender address |
+| `CLERK_SECRET_KEY` | not set | Turns on **Continue with Google** in the phone app (see below). Secret: never commit it or put it in the app. |
+| `CLERK_PUBLISHABLE_KEY` | the project's Clerk app | Only to use a different Clerk app. Lets the backend check that sign-in tokens come from that app. |
 
 App settings are passed to `flutter run` / `flutter build` with
 `--dart-define`:
@@ -298,8 +300,50 @@ App settings are passed to `flutter run` / `flutter build` with
 |---|---|---|
 | `WIFI_BACKEND_URL` | Phone app | The PC's address over Wi-Fi (set by `run_app.ps1`) |
 | `API_BASE_URL` | Portal, tests | The backend's address |
+| `CLERK_PUBLISHABLE_KEY` | Phone app | Only to use a different Clerk app; defaults to the project's. `run_app.ps1` passes it on when `$env:CLERK_PUBLISHABLE_KEY` is set. |
 
-Screening thresholds are at the top of `backend/main.py`.
+### Google sign-in (phone app only, via Clerk)
+
+The guardian app has **Continue with Google** on the login and create-account
+screens. The clinician portal does not: clinicians sign in with their hospital
+accounts only, and a clinician's email is refused on the Google route.
+
+The project uses one shared Clerk app ("ASD-Sense"). Its publishable key is
+public and already built into the app and the backend, so the phone app needs
+no setup. **Only the backend needs the secret key**, once per PC:
+
+1. Get access to the Clerk app: ask the project owner to invite you from the
+   Clerk Dashboard (**Invite**, top right). Accept the email invitation.
+2. In the Clerk Dashboard open **ASD-Sense → Configure → API keys**. Under
+   **Secret keys**, click the copy icon next to the hidden key (no need to
+   reveal it).
+3. Save it for your Windows user, in any PowerShell window (paste between the
+   quotes with **Ctrl+V**):
+
+   ```powershell
+   [Environment]::SetEnvironmentVariable("CLERK_SECRET_KEY", "<paste here>", "User")
+   ```
+
+4. Close and reopen PowerShell, then start the backend as usual. Check it with:
+
+   ```powershell
+   if ($env:CLERK_SECRET_KEY -like "sk_*") { "Secret key: OK" } else { "Secret key: MISSING" }
+   ```
+
+Never commit the secret key or send it in chat or email: it gives admin access
+to the Clerk app. If it leaks, create a new one in the Dashboard (**Secret keys
+→ Add new key**), delete the old one, and tell the team to update theirs.
+
+How it works: Clerk shows Google's sign-in page inside the app, then the app
+sends the Clerk token to `POST /api/auth/clerk`. The backend verifies it and
+signs the guardian in with a normal app session. A first-time Google user gets a
+new guardian account. If a guardian account already has that email, Google is
+linked to it, and the password keeps working too. An account created with Google
+has no password; use **Forgot password?** to set one.
+
+Without the secret key the backend answers `503` and the app shows "Google
+sign-in is not configured on this server"; email sign-in is unaffected. To use a different
+Clerk app, set `CLERK_PUBLISHABLE_KEY` for both the backend and `run_app.ps1`.
 
 ## 10. Managing data
 

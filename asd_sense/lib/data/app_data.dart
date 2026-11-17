@@ -117,6 +117,13 @@ class AppData extends ChangeNotifier {
     await _acceptSession(response, remember: remember);
   }
 
+  /// Google sign-in via Clerk: the backend verifies the Clerk token and returns
+  /// the same kind of session as password sign-in.
+  Future<void> signInWithGoogle(String clerkSessionToken) async {
+    final response = await _api.signInWithClerk(clerkSessionToken);
+    await _acceptSession(response, remember: true);
+  }
+
   Future<void> register({
     required String name,
     required String email,

@@ -103,6 +103,29 @@ void main() {
     expect(afterRestart.children.single.name, 'Synthetic Child');
   });
 
+  test('Google sign-in exchanges the Clerk token for a remembered app session', () async {
+    final store = FakeSessionStore();
+    final client = MockClient((request) async {
+      final common = commonResponse(request.url.path);
+      if (common != null) return common;
+      if (request.url.path == '/api/auth/clerk') {
+        expect(request.method, 'POST');
+        expect(request.headers['authorization'], isNull);
+        expect(jsonDecode(request.body), {'session_token': 'synthetic-clerk-jwt'});
+        return jsonResponse({'access_token': 'synthetic-token', 'user': account});
+      }
+      if (request.url.path == '/api/children') {
+        expect(request.headers['authorization'], 'Bearer synthetic-token');
+        return jsonResponse([]);
+      }
+      return http.Response('Not found', 404);
+    });
+    final api = ApiService(baseUrl: 'http://localhost:8000', client: client);
+    final data = AppData.testing(api: api, store: store);
+    await data.signInWithGoogle('synthetic-clerk-jwt');
+    expect(store.token, 'synthetic-token');
+  });
+
   test('non-remembered session does not auto-restore on restart', () async {
     final store = FakeSessionStore();
     final client = MockClient((request) async {

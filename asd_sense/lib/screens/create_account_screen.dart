@@ -3,6 +3,7 @@ import '../data/app_data.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common_widgets.dart';
+import '../widgets/google_sign_in_button.dart';
 import 'main_shell.dart';
 
 class CreateAccountScreen extends StatefulWidget {
@@ -152,11 +153,7 @@ class _CreateAccountScreenState extends State<CreateAccountScreen> {
               const SizedBox(height: 20),
               const OrDivider(),
               const SizedBox(height: 20),
-              SecondaryButton(
-                label: 'Google sign-up not available',
-                leading: const GoogleLogo(),
-                onPressed: null, // No OAuth provider is configured.
-              ),
+              const GoogleSignInButton(),
             ],
           ),
         ),

@@ -26,7 +26,7 @@ Sessions last 8 hours. Passwords are 12 to 128 characters.
 
 | Account | Created by | Signs in at | Can use |
 |---|---|---|---|
-| Guardian | Self sign-up in the app | `POST /api/auth/login` | `/api/...` and `/predict/...`, only for their own children |
+| Guardian | Self sign-up in the app, or Google | `POST /api/auth/login`, `POST /api/auth/clerk` | `/api/...` and `/predict/...`, only for their own children |
 | Clinician / admin | `python manage.py create-clinician` | `POST /api/clinic/auth/login` | `/api/clinic/...`, every child in the clinic |
 
 Each account type is refused by the other set of routes (`401` or `403`).
@@ -40,6 +40,7 @@ Errors come back as `{"detail": "<message>"}`.
 |---|---|---|
 | `POST` | `/api/auth/register` | `{full_name, email, password, phone?}` → `{access_token, token_type, expires_in, user}` |
 | `POST` | `/api/auth/login` | `{email, password}` → same as register |
+| `POST` | `/api/auth/clerk` | Google sign-in via Clerk: `{session_token}` (a Clerk session JWT) → same as register. Creates the guardian on first use or links an existing guardian with the same verified email. `401` bad token, `403` clinician/admin email, `502` Clerk unreachable, `503` not configured. |
 | `GET` | `/api/auth/me` | The signed-in guardian |
 | `POST` | `/api/auth/logout` | Ends this session |
 | `PATCH` | `/api/account/profile` | `{full_name, phone?}` |

@@ -3,6 +3,7 @@ import '../data/app_data.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/common_widgets.dart';
+import '../widgets/google_sign_in_button.dart';
 import 'main_shell.dart';
 import 'create_account_screen.dart';
 import 'forgot_password_screen.dart';
@@ -140,11 +141,7 @@ class _LoginScreenState extends State<LoginScreen> {
               const SizedBox(height: 20),
               const OrDivider(),
               const SizedBox(height: 20),
-              SecondaryButton(
-                label: 'Google sign-in not available',
-                leading: const GoogleLogo(),
-                onPressed: null, // OAuth has not been implemented.
-              ),
+              const GoogleSignInButton(),
               const SizedBox(height: 36),
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,

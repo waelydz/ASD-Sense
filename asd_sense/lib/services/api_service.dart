@@ -135,6 +135,11 @@ class ApiService {
         'password': password,
       }));
 
+  /// Exchange a Clerk session token (Google sign-in) for an app session.
+  Future<Map<String, dynamic>> signInWithClerk(String clerkSessionToken) async =>
+      Map<String, dynamic>.from(await _send('POST', '/api/auth/clerk',
+          body: {'session_token': clerkSessionToken}));
+
   Future<Map<String, dynamic>> me(String token) async =>
       Map<String, dynamic>.from(await _send('GET', '/api/auth/me', token: token));
 

@@ -104,6 +104,19 @@ CREATE TABLE IF NOT EXISTS Auth_Sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_auth_sessions_user_id ON Auth_Sessions(user_id);
 
+-- External sign-in identities (Google via Clerk) linked to guardian accounts.
+-- Additive: guardian accounts without a row here keep signing in by password.
+CREATE TABLE IF NOT EXISTS User_Identities (
+    identity_id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    provider TEXT NOT NULL CHECK (provider IN ('clerk')),
+    subject TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (provider, subject),
+    FOREIGN KEY (user_id) REFERENCES Users(user_id) ON DELETE CASCADE
+);
+CREATE INDEX IF NOT EXISTS idx_user_identities_user_id ON User_Identities(user_id);
+
 -- Additive persistence migration; existing tables and rows remain unchanged.
 -- Physical document bytes live outside the Git checkout and use random filenames.
 CREATE TABLE IF NOT EXISTS Medical_Records (

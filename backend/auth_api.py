@@ -209,9 +209,17 @@ def create_auth_router(db_path: str | Path) -> APIRouter:
     return router
 
 
-def attach_auth(app: FastAPI, db_path: str | Path) -> None:
-    """Install auth sessions without changing existing model or inference paths."""
+def attach_auth(app: FastAPI, db_path: str | Path, clerk_verifier=None) -> None:
+    """Install auth sessions without changing existing model or inference paths.
+
+    Google sign-in (/api/auth/clerk) uses `clerk_verifier` if given, otherwise the
+    CLERK_* environment variables; without either it answers 503.
+    """
+    from clerk_auth_api import create_clerk_router, verifier_from_environment
+
     app.include_router(create_auth_router(db_path))
+    app.include_router(create_clerk_router(
+        db_path, clerk_verifier or verifier_from_environment()))
 
     @app.middleware("http")
     async def authenticated_identity(request: Request, call_next):

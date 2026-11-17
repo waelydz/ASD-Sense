@@ -32,6 +32,17 @@ if ($adbPath) {
     Write-Host "WARNING: Could not locate adb.exe. Running on Wi-Fi URL only." -ForegroundColor DarkYellow
 }
 
+# Google sign-in (Clerk) uses the project's Clerk app by default (key in
+# lib/services/clerk_google_sign_in.dart). Set $env:CLERK_PUBLISHABLE_KEY only
+# to point the app at a different Clerk app.
+$clerkArgs = @()
+if ($env:CLERK_PUBLISHABLE_KEY) {
+    $clerkArgs = @("--dart-define=CLERK_PUBLISHABLE_KEY=$($env:CLERK_PUBLISHABLE_KEY)")
+    Write-Host "Google sign-in   : Clerk app from CLERK_PUBLISHABLE_KEY" -ForegroundColor Green
+} else {
+    Write-Host "Google sign-in   : project's Clerk app (default)" -ForegroundColor Green
+}
+
 # 3. Set up Method 1 (Auto-detect Laptop Wi-Fi IPv4 Address)
 $ip = (Get-NetIPConfiguration | Where-Object { $_.IPv4DefaultGateway -ne $null -and $_.NetAdapter.Status -eq "Up" }).IPv4Address.IPAddress | Select-Object -First 1
 
@@ -39,8 +50,8 @@ if ($ip) {
     $wifiUrl = "http://${ip}:8000"
     Write-Host "Primary Wi-Fi URL : $wifiUrl" -ForegroundColor Green
     Write-Host "Fallback USB URL  : http://127.0.0.1:8000" -ForegroundColor Yellow
-    flutter run --dart-define=WIFI_BACKEND_URL=$wifiUrl
+    flutter run --dart-define=WIFI_BACKEND_URL=$wifiUrl @clerkArgs
 } else {
     Write-Host "No active Wi-Fi IP detected. Running on USB tunnel (http://127.0.0.1:8000)..." -ForegroundColor Yellow
-    flutter run
+    flutter run @clerkArgs
 }
