@@ -65,7 +65,8 @@ TFLITE_FACIAL_VIT_PATH = os.path.join(MODELS_DIR, "facial_vit_b16_quantized.tfli
 VIT_HUB_URL = "https://tfhub.dev/sayakpaul/vit_b16_fe/1"
 
 IMG_SIZE = (224, 224)
-EDGE_CONFIDENCE_THRESHOLD = 1.01  # Escalate to Cloud ViT if MobileNet confidence < 85%
+# Escalate MobileNetV2 predictions below 85% confidence to the available ViT.
+EDGE_CONFIDENCE_THRESHOLD = 0.85
 INCONCLUSIVE_THRESHOLD = 0.60
 
 gesture_mobilenet = None
@@ -341,13 +342,13 @@ def score_gesture(image_bytes: bytes) -> tuple[float, float, str, str]:
             prob_autistic = float(gesture_vit.predict(vit_input, verbose=0)[0][0])
             confidence = max(prob_autistic, 1.0 - prob_autistic)
             model_used = "Gesture_ViT-B16"
-            routing_tier = "Cloud clinical diagnosis (escalated)"
+            routing_tier = "Backend ViT screening (escalated)"
     else:
         vit_input = preprocess_external_vit(image_bytes)
         prob_autistic = float(gesture_vit.predict(vit_input, verbose=0)[0][0])
         confidence = max(prob_autistic, 1.0 - prob_autistic)
         model_used = "Gesture_ViT-B16"
-        routing_tier = "Cloud clinical diagnosis"
+        routing_tier = "Backend ViT screening"
     return prob_autistic, confidence, model_used, routing_tier
 
 
@@ -374,7 +375,7 @@ def score_facial(image_bytes: bytes) -> tuple[float, float, str, str]:
                 prob_autistic = float(facial_vit.predict(raw_input, verbose=0)[0][0])
             confidence = max(prob_autistic, 1.0 - prob_autistic)
             model_used = facial_vit_model_label
-            routing_tier = "Quantized ViT diagnosis (escalated)"
+            routing_tier = "Quantized ViT screening (escalated)"
     else:
         if tflite_facial_vit_interpreter is not None:
             prob_autistic = predict_with_tflite_vit(raw_input)
@@ -382,7 +383,7 @@ def score_facial(image_bytes: bytes) -> tuple[float, float, str, str]:
             prob_autistic = float(facial_vit.predict(raw_input, verbose=0)[0][0])
         confidence = max(prob_autistic, 1.0 - prob_autistic)
         model_used = facial_vit_model_label
-        routing_tier = "Quantized ViT diagnosis"
+        routing_tier = "Quantized ViT screening"
     return prob_autistic, confidence, model_used, routing_tier
 
 
