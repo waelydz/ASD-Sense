@@ -15,6 +15,7 @@ import tf_keras
 import tensorflow_hub as hub
 
 from quantize_vit import BASE_DIR, MODELS_DIR, build_clean_facial_vit
+from gesture_vit_config import choose_gesture_vit_weights_path
 from child_profiles_api import create_child_profiles_router, require_user_id
 from clinical_api import create_clinical_router, require_owned_child, save_screening_result, list_screenings
 from account_api import create_account_router
@@ -55,7 +56,7 @@ attach_auth(app, DB_PATH)
 
 # Model file paths in backend/models/
 GESTURE_MOBILENET_PATH = os.path.join(MODELS_DIR, "best_gesture_mobilenet.keras")
-GESTURE_VIT_WEIGHTS_PATH = os.path.join(MODELS_DIR, "best_gesture_vit.weights.h5")
+GESTURE_VIT_WEIGHTS_PATH = choose_gesture_vit_weights_path(MODELS_DIR)
 
 FACIAL_MOBILENET_PATH = os.path.join(MODELS_DIR, "best_facial_mobilenet.keras")
 FACIAL_VIT_WEIGHTS_PATH = os.path.join(MODELS_DIR, "best_facial_vit.weights.h5")
